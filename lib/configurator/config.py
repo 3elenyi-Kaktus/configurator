@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from threading import Thread, Lock
 from typing import Any, Optional, Callable, TypeAlias
+from typing_extensions import Unpack
 
 from lib.configurator.change_poller import ChangePoller
 from lib.configurator.sys_options import SysOptionName, sys_options as SysOptions
@@ -11,17 +12,18 @@ from lib.configurator.options import IOptionName, Option
 from lib.configurator.arg_parser import IArgParser
 from lib.json.manager import toReadableJSON
 
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 
-# it's an inheriting Config class responsibility to adapt (or ignore) online config reloading feature
-# all classes that will support online config reloading (hot reload) must provide a corresponding interface:
-# def callback(self, config: Config) -> None:
-#     pass
+# it's a users responsibility to adapt (or ignore) online config reloading feature
+# All classes that will support online config reloading (hot reload) must provide a corresponding interface:
+#
+# def callback(self, ...) -> None: ...
+#
+# Then the callback must be registered via subscribing to needed Config options
+# Specified options will be passed to provided method on config reload
 
-# todo: ReloadCallback is defined as a function, accepting IConfig arg, while in reality these functions will be capable of serving only the subclasses of it (contravariance)
-#       It should be redefined as a TypeVar or some other way
 
-ReloadCallback: TypeAlias = Callable[["IConfig"], None]
+ReloadCallback: TypeAlias = Callable[[Unpack[tuple[Any, ...]]], None]
 Properties: TypeAlias = list[property]
 
 
@@ -36,7 +38,7 @@ class IConfig:
         if len(option_mapping.keys() & sys_option_mapping.keys()) > 0:
             raise RuntimeError("Provided list of registered options overlaps with system ones, consider renaming")
         self.registered_options: dict[IOptionName, Option] = option_mapping | sys_option_mapping
-        self.on_reload_triggers: dict[ReloadCallback, list[Any]] = {}
+        self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
         self.options: dict[IOptionName, Option] = None
         self.change_poller: ChangePoller = None
         self.path_to_config: Path = self.arg_parser.getConfigFilepath()
@@ -108,22 +110,28 @@ class IConfig:
                 return
 
             # reload necessary classes based on changed props and registered reload callbacks
-            logging.info(f"Reloaded config successfully, propagating changes to dependants")
-            callbacks: set[ReloadCallback] = set()
             for prop in self.properties:
                 if self.old_values[prop] != prop.fget(self):
-                    logging.debug(
+                    logging.info(
                         f"Property {prop.fget.__name__} was changed: {self.old_values[prop]} -> {prop.fget(self)}"
                     )
-                    for callback, triggered_on in self.on_reload_triggers.items():
-                        if prop in triggered_on:
-                            callbacks.add(callback)
-            for callback in callbacks:
+            logging.info(f"Reloaded config successfully, propagating changes to dependants")
+            for callback, triggered_on in self.on_reload_triggers.items():
+                args: list[Any] = []
+                needs_reloading: bool = False
+                for prop in triggered_on:
+                    prop_value: Any = prop.fget(self)
+                    args.append(prop_value)
+                    if self.old_values[prop] != prop_value:
+                        needs_reloading = True
+                if not needs_reloading:
+                    continue
                 try:
-                    callback(self)
+                    callback(*args)
                 except BaseException as error:
                     logging.exception(error)
                     logging.error(f"Reloading trigger {callback} failed")
+            logging.info(f"Config reloading completed")
 
     @staticmethod
     def _loadEnvVars(env_file_path: Path) -> Optional[dict[str, Any]]:

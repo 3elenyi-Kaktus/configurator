@@ -28,11 +28,11 @@ class EventsHandler(FileSystemEventHandler):
         # reject any events not related to target file
         if (
             event.event_type == "created"
-            and event.src_path == self.filepath
+            and Path(event.src_path) == self.filepath
             or event.event_type == "modified"
-            and event.src_path == self.filepath
+            and Path(event.src_path) == self.filepath
             or event.event_type == "moved"
-            and event.dest_path == self.filepath
+            and Path(event.dest_path) == self.filepath
         ):
             getattr(self, f"on_{event.event_type}")(event)
 
