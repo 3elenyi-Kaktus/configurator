@@ -1,18 +1,20 @@
 import json
 import logging
-import re
 from pathlib import Path
-from threading import Thread, Lock
-from typing import Any, Optional, Callable, TypeAlias
+import re
+from threading import Lock, Thread
+from typing import Any, Callable, Optional, TypeAlias
+
 from typing_extensions import Unpack
 
-from lib.configurator.change_poller import ChangePoller
-from lib.configurator.sys_options import SysOptionName, sys_options as SysOptions
-from lib.configurator.options import IOptionName, Option
 from lib.configurator.arg_parser import IArgParser
+from lib.configurator.change_poller import ChangePoller
+from lib.configurator.options import IOptionName, Option
+from lib.configurator.sys_options import SysOptionName, sys_options as SysOptions
 from lib.json.manager import toReadableJSON
 
-__version__ = "0.2.4"
+
+__version__ = "0.3.0"
 
 # it's a users responsibility to adapt (or ignore) online config reloading feature
 # All classes that will support online config reloading (hot reload) must provide a corresponding interface:
@@ -37,6 +39,7 @@ class IConfig:
         sys_option_mapping: dict[IOptionName, Option] = {x.name: x for x in SysOptions}
         if len(option_mapping.keys() & sys_option_mapping.keys()) > 0:
             raise RuntimeError("Provided list of registered options overlaps with system ones, consider renaming")
+        # this is a list of all available options, which can be used by this config
         self.registered_options: dict[IOptionName, Option] = option_mapping | sys_option_mapping
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
         self.options: dict[IOptionName, Option] = None
@@ -68,7 +71,7 @@ class IConfig:
         # resolving file path in following order until first success: path from cmd args, path from file args, then lookup in this directory
         env_vars: dict[str, Any] = {}
         for source, env_file_path in [
-            ("file args", file_args[SysOptionName.ENV_FILEPATH]),
+            ("file args", file_args.get(SysOptionName.ENV_FILEPATH, None)),
             ("cmd args", cmd_args[SysOptionName.ENV_FILEPATH]),
             ("config directory", Path(__file__).parent / ".env"),
         ]:
@@ -83,6 +86,19 @@ class IConfig:
         # arguments precedence is resolved in following order: cmd args > file args > env vars
         args: dict[str, Any] = self._overrideWithArgs(env_vars, file_args)
         args = self._overrideWithArgs(args, cmd_args)
+
+        # we collected all available options up to this point
+        # now we need to inject those marked as non-required and omitted in all sources
+        omitted_options: dict[str, Any] = {}
+        for option_name, option in self.registered_options.items():
+            if not option.required and option_name not in args:
+                omitted_options[option_name] = option
+        logging.info(f"Inject omitted options: {omitted_options}")
+        # todo: maybe provide a default value interface for options
+        #   for now, set them as None
+        for option_name, _ in omitted_options.items():
+            args[option_name] = None
+
         try:
             self.options = self._validateData(args)
         except BaseException as exc:
@@ -162,13 +178,18 @@ class IConfig:
         return env_vars
 
     def _validateData(self, data: dict[str, Any]) -> dict[IOptionName, Any]:
-        # all options must be from passed options dictionary
-        option_names: set[str] = set(self.registered_options.keys()).union(set(iter(SysOptionName)))
         parsed_option_names: set[str] = set(data.keys())
-        if not parsed_option_names.issubset(option_names):
-            raise RuntimeError(f"Config: Invalid option names in config: {parsed_option_names - option_names}")
-        if not option_names.issubset(parsed_option_names):
-            raise RuntimeError(f"Config: Missing options in config: {option_names - parsed_option_names}")
+        # all options must be from registered ones
+        allowed_options: set[str] = set(self.registered_options.keys())
+        if diff := parsed_option_names.difference(allowed_options):
+            raise RuntimeError(f"Config: Invalid option names in config: {diff}")
+        # all required options must be set
+        required_options: set[str] = set()
+        for option_name, option in self.registered_options.items():
+            if option.required:
+                required_options.add(option_name)
+        if diff := required_options.difference(parsed_option_names):
+            raise RuntimeError(f"Config: Missing options in config: {diff}")
 
         option_name: str
         value: Any

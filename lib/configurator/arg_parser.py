@@ -1,11 +1,11 @@
 import argparse
-import logging
 from argparse import ArgumentParser
+import logging
 from pathlib import Path
 from typing import Any
 
-from lib.json.manager import toReadableJSON
 from lib.configurator.sys_options import SysOptionName
+from lib.json.manager import toReadableJSON
 
 
 class IArgParser:

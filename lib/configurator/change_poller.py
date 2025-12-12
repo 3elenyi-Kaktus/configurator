@@ -2,17 +2,18 @@ import logging
 from pathlib import Path
 from threading import Thread
 from typing import Callable
-from watchdog.observers import Observer
+
 from watchdog.events import (
-    FileModifiedEvent,
-    DirModifiedEvent,
-    FileSystemEventHandler,
-    FileSystemEvent,
     DirCreatedEvent,
-    FileCreatedEvent,
-    FileMovedEvent,
+    DirModifiedEvent,
     DirMovedEvent,
+    FileCreatedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+    FileSystemEvent,
+    FileSystemEventHandler,
 )
+from watchdog.observers import Observer
 
 
 class EventsHandler(FileSystemEventHandler):

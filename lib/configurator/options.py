@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from enum import Enum
 from datetime import datetime as dt
+from enum import Enum
 from pathlib import Path
-from typing import Callable, Any, Type
+from typing import Any, Callable, Optional, Type
 
 
 # base class for any custom options
@@ -15,7 +15,12 @@ class Option:
     name: IOptionName
     config_inner_type: Type[Any]
     validator: Callable[[Any], Any] = lambda x: x
+    required: bool = True
     value: Any = None
+
+    def __post_init__(self):
+        if not self.required:
+            self.config_inner_type = Optional[self.config_inner_type]
 
     def __json__(self):
         value = self.value
@@ -23,4 +28,9 @@ class Option:
             value = str(value)
         elif isinstance(value, dt):
             value = str(value)
-        return {"name": self.name.name, "value": value}
+        return {
+            "name": self.name.name,
+            "config_inner_type": str(self.config_inner_type),
+            "required": self.required,
+            "value": value,
+        }
