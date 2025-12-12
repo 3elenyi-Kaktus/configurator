@@ -11,10 +11,10 @@ from lib.configurator.arg_parser import IArgParser
 from lib.configurator.change_poller import ChangePoller
 from lib.configurator.options import IOptionName, Option
 from lib.configurator.sys_options import SysOptionName, sys_options as SysOptions
-from lib.json.manager import toReadableJSON
+from lib.json.helpers import toReadableJSON
 
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 # it's a users responsibility to adapt (or ignore) online config reloading feature
 # All classes that will support online config reloading (hot reload) must provide a corresponding interface:

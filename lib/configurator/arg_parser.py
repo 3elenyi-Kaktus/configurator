@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from lib.configurator.sys_options import SysOptionName
-from lib.json.manager import toReadableJSON
+from lib.json.helpers import toReadableJSON
 
 
 class IArgParser:
