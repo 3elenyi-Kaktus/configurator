@@ -14,6 +14,7 @@ from watchdog.events import (
     FileSystemEventHandler,
 )
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 
 class EventsHandler(FileSystemEventHandler):
@@ -26,7 +27,7 @@ class EventsHandler(FileSystemEventHandler):
         self.on_any_event(event)
         if event.is_directory:
             return
-        # reject any events not related to target file
+        # Reject any events not related to target file
         if (
             event.event_type == "created"
             and Path(event.src_path) == self.filepath
@@ -64,18 +65,22 @@ class ChangePoller:
     def __init__(self, filepath: Path, callback: Callable[[], None]):
         self.filepath: Path = filepath
         self.callback: Callable[[], None] = callback
-        self.stop_requested: bool = False
 
-    def poll(self):
+        self.stop_requested: bool = False
+        self.poller: Thread = None
+
+    def _poll(self):
         events_handler: EventsHandler = EventsHandler(self.filepath, self.callback)
-        observer: Observer = Observer()
+        observer: BaseObserver = Observer()
         observer.schedule(
             events_handler,
             self.filepath.parent,
             recursive=False,
             event_filter=[FileCreatedEvent, FileModifiedEvent, FileMovedEvent],
         )
-        logging.info(f"Starting polling for file '{self.filepath.name}' changes at dir: '{self.filepath.parent}'")
+        logging.info(
+            f"ChangePoller: Starting polling for file: '{self.filepath.name}' changes at dir: '{self.filepath.parent}'"
+        )
         observer.start()
         try:
             while observer.is_alive():
@@ -89,6 +94,12 @@ class ChangePoller:
         observer.join()
         logging.critical(f"ChangePoller: Polling for file changes stopped")
 
+    def startPolling(self) -> None:
+        logging.info(f"ChangePoller: Starting up")
+        self.poller = Thread(target=self._poll)
+        self.poller.start()
+
     def stopPolling(self):
         logging.info(f"ChangePoller: Stop requested")
         self.stop_requested = True
+        self.poller.join()
