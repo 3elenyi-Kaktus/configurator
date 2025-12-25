@@ -58,7 +58,7 @@ class IConfig:
 
         # TODO  Simplify pattern (comment and normal lines)
         self.env_file_pattern: Pattern = re.compile(
-            r"^#.*?\n$|^(?P<name>\w+?)=(?P<value>'.+?'|\".+?\"|\d+?)(?:\s*?#.*?)?\n$"
+            r"^#.*?\n$|^\n$|^(?P<name>\w+?)=(?P<value>'.+?'|\".+?\"|\d+?)(?:\s*?#.*?)?\n$"
         )
 
     def _getProps(self) -> Properties:
