@@ -8,16 +8,13 @@ from re import Pattern
 from threading import Lock
 from typing import Any, Callable, Optional, TypeAlias
 
+from json_helpers.helpers import toReadableJSON
 from typing_extensions import Unpack
 
-from lib.configurator.arg_parser import IArgParser
-from lib.configurator.change_poller import ChangePoller
-from lib.configurator.options import MISSING, ExclusiveGroups, IOptionName, Option
-from lib.configurator.sys_options import SysOptionName, sys_options as SysOptions
-from lib.json.helpers import toReadableJSON
-
-
-__version__ = "0.4.0"
+from configurator.arg_parser import IArgParser
+from configurator.change_poller import ChangePoller
+from configurator.options import MISSING, ExclusiveGroups, IOptionName, Option
+from configurator.sys_options import SysOptionName, sys_options as SysOptions
 
 
 ReloadCallback: TypeAlias = Callable[[Unpack[tuple[Any, ...]]], None]

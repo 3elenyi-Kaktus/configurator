@@ -4,8 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from lib.configurator.sys_options import SysOptionName
-from lib.json.helpers import toReadableJSON
+from json_helpers.helpers import toReadableJSON
+
+from configurator.sys_options import SysOptionName
 
 
 class IArgParser:

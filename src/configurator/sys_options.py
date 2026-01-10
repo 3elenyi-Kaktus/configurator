@@ -1,7 +1,7 @@
 from typing import Optional
 
-from lib.configurator.options import IOptionName, Option
-from lib.configurator.validators import asOptionalPath, validatePath
+from configurator.options import IOptionName, Option
+from configurator.validators import asOptionalPath, validatePath
 
 
 class SysOptionName(IOptionName):

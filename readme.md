@@ -97,8 +97,9 @@ Do not override them or create options with similar names.
 
 ### CMD arguments parser
 Configurator supports command line arguments. If needed, you'll have to create a new `ArgParser` class like this:
+
 ```python
-from lib.configurator.arg_parser import IArgParser
+from configurator.src.configurator.arg_parser import IArgParser
 from settings.options import OptionName
 from settings.version import __version__
 
@@ -128,7 +129,7 @@ You can name them as you want (i.e. `"--my-awesome-option"`), given that their d
 The config class itself, is a simple wrapper with the getter functions. To create one, you should subclass it and write getters for your own options:
 
 ```python
-from lib.configurator.config import IConfig
+from configurator.src.configurator.config import IConfig
 from settings.arg_parser import ArgParser
 from settings.options import MyOptionName, my_options as registered_options
 
