@@ -1,6 +1,7 @@
 from typing import Optional
 
-from configurator.options import IOptionName, Option
+from configurator.option_name import IOptionName
+from configurator.options import Option
 from configurator.validators import asOptionalPath, validatePath
 
 

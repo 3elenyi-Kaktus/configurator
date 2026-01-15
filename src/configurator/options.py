@@ -1,13 +1,10 @@
 from dataclasses import dataclass
 from datetime import datetime as dt
-from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional, Type, TypeAlias
+from typing import Any, Callable, Optional, Type
 
-
-# Base class for any custom options
-class IOptionName(str, Enum):
-    pass
+from configurator.option_name import IOptionName
+from configurator.rules import Depends
 
 
 class Missing:
@@ -23,6 +20,7 @@ class Option:
     config_inner_type: Type[Any]
     validator: Callable[[Any], Any] = lambda x: x
     required: bool = True
+    dependencies: Depends = None
 
     # TODO: Maybe provide a default value interface for options
     #       For now, set them as special value MISSING
@@ -45,7 +43,3 @@ class Option:
             "required": self.required,
             "value": value,
         }
-
-
-OptionGroup: TypeAlias = tuple[IOptionName, ...]
-ExclusiveGroups: TypeAlias = tuple[OptionGroup, ...]

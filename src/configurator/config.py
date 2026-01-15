@@ -13,7 +13,9 @@ from typing_extensions import Unpack
 
 from configurator.arg_parser import IArgParser
 from configurator.change_poller import ChangePoller
-from configurator.options import MISSING, ExclusiveGroups, IOptionName, Option
+from configurator.option_name import IOptionName
+from configurator.options import MISSING, Option
+from configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
 from configurator.sys_options import SysOptionName, sys_options as SysOptions
 
 
@@ -26,11 +28,11 @@ class IConfig:
         self,
         arg_parser: IArgParser,
         registered_options: list[Option],
-        exclusive_groups_rules: list[ExclusiveGroups] = None,
+        exclusive_group_rules: list[ExclusiveGroupRule] = None,
     ):
         self.arg_parser: IArgParser = arg_parser
-        self.exclusive_groups_rules: list[ExclusiveGroups] = (
-            exclusive_groups_rules if exclusive_groups_rules is not None else []
+        self.exclusive_group_rules: list[ExclusiveGroupRule] = (
+            exclusive_group_rules if exclusive_group_rules is not None else []
         )
 
         option_mapping: dict[IOptionName, Option] = {x.name: x for x in registered_options}
@@ -56,6 +58,13 @@ class IConfig:
         # TODO  Simplify pattern (comment and normal lines)
         self.env_file_pattern: Pattern = re.compile(
             r"^#.*?\n$|^\n$|^(?P<name>\w+?)=(?P<value>'.+?'|\".+?\"|\d+?)(?:\s*?#.*?)?\n$"
+        )
+
+        option_dependencies: dict[IOptionName, Depends] = {
+            option.name: option.dependencies for option in self.registered_options.values()
+        }
+        self.dependencies_resolver: DependenciesResolver = DependenciesResolver(
+            option_dependencies, self.exclusive_group_rules
         )
 
     def _getProps(self) -> Properties:
@@ -116,17 +125,17 @@ class IConfig:
             raise RuntimeError(f"Invalid option names in config: {diff}")
 
     def _resolveExclusiveGroups(self, options: dict[IOptionName, Option]) -> None:
-        for exclusive_groups_rule in self.exclusive_groups_rules:
+        for exclusive_group_rule in self.exclusive_group_rules:
             group_defined: list[bool] = []
             options_set: list[set[IOptionName]] = []
-            for option_group in exclusive_groups_rule:
+            for option_group in exclusive_group_rule:
                 options_set.append(
                     set(option_name for option_name in option_group if options[option_name].raw_value is not MISSING)
                 )
                 group_defined.append(len(options_set[-1]) > 0)
             if group_defined.count(True) > 1:
                 raise RuntimeError(f"Options {[x for x in options_set if len(x) > 0]} are exclusive")
-            for option_group, group_enabled in zip(exclusive_groups_rule, group_defined):
+            for option_group, group_enabled in zip(exclusive_group_rule, group_defined):
                 if group_enabled:
                     continue
                 logging.info(
@@ -134,6 +143,29 @@ class IConfig:
                 )
                 for option_name in option_group:
                     options[option_name].required = False
+
+    def _resolveOptionDependencies(self, options: dict[IOptionName, Option]) -> None:
+        for option_name, option in options.items():
+            if option.dependencies is None:
+                continue
+
+            dependency_groups: list[DependencyGroup] = self.dependencies_resolver.collectDependencies(option_name)
+            group_fulfilled: bool = False
+            for dependency_group in dependency_groups:
+                group_fulfilled: bool = True
+                for dependency in dependency_group:
+                    if options[dependency].raw_value is MISSING:
+                        group_fulfilled = False
+                        break
+                if group_fulfilled:
+                    break
+
+            if not group_fulfilled and options[option_name].raw_value is not MISSING:
+                raise RuntimeError(
+                    f"Option {option_name} was set, but none of it's dependency group rules {dependency_groups} were fulfilled"
+                )
+            if not group_fulfilled:
+                options[option_name].required = False
 
     def _recreate(self):
         # Load args from config file
@@ -196,6 +228,15 @@ class IConfig:
             self._resolveExclusiveGroups(options)
         except BaseException as exc:
             raise RuntimeError(f"One of exclusive options rules was violated") from exc
+
+        # We resolved which exclusive group rules had to be applied, now we must check the option dependencies.
+        # If not all dependencies for option are satisfied, then we have to do 2 things:
+        # 1) check if option was set, then it's a reason for an error.
+        # 2) otherwise, manually reset `required` flag, if needed.
+        try:
+            self._resolveOptionDependencies(options)
+        except BaseException as exc:
+            raise RuntimeError(f"One of options was set, despite of not fulfilled dependencies for it") from exc
 
         # We can check for missing options now.
         # `required` flag could have been mangled by previous resolves and differ from registered options list.
@@ -264,7 +305,7 @@ class IConfig:
             raise RuntimeError(f"Missing options in config: {diff}")
 
         # Just a fair warning, that some optional args weren't set
-        if diff := all_options.difference(required_options).difference(set_options):
+        if diff := all_options.difference(set_options):
             logging.warning(f"Config: Options '{diff}' are omitted")
 
     @staticmethod
