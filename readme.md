@@ -60,7 +60,7 @@ String literals should be unique, since there is no way to distinguish them [TOD
 All listed options must be registered via creating an Option objects:
 
 ```python
-from configurator.options import Option
+from configurator.option import Option
 
 Option(MyOptionName.OPTION_ONE, Optional[str], required=False)
 ```

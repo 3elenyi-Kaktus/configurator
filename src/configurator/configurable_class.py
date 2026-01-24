@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from functools import partial
 import logging
 import sys
-from typing import Any, Callable, Type
+from typing import Any, Callable
 
 
 class NotSet:
@@ -16,7 +16,7 @@ DEBUG: bool = False
 
 @dataclass
 class Configurable:
-    inner_config_type: Type[Any]
+    inner_config_type: type[Any]
     validator: Callable[[Any], Any] = lambda x: x
     default: Any = NOTSET
 

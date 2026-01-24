@@ -1,15 +1,22 @@
-import logging
-from typing import Optional, TypeAlias
+from __future__ import annotations
 
-from configurator.option_name import IOptionName
+import logging
+from typing import TYPE_CHECKING, Optional, TypeAlias
+from uuid import uuid4
+
+from configurator.commons import OptionName
+
+
+if TYPE_CHECKING:
+    from configurator.option import Option
 
 
 class Depends:
-    def __init__(self, *args: IOptionName):
-        self.groups: list[tuple[IOptionName, ...]] = [tuple(option_name for option_name in args)]
+    def __init__(self, *args: Option):
+        self.groups: list[tuple[OptionName, ...]] = [tuple(option.name for option in args)]
 
     def __and__(self, other: "Depends") -> "Depends":
-        result: list[tuple[IOptionName, ...]] = []
+        result: list[tuple[OptionName, ...]] = []
         for dependency_group in self.groups:
             for other_dependency_group in other.groups:
                 result.append((*dependency_group, *other_dependency_group))
@@ -21,7 +28,7 @@ class Depends:
         return self
 
 
-DependencyGroup: TypeAlias = list[IOptionName]
+DependencyGroup: TypeAlias = list[OptionName]
 
 
 # TODO  This is a straightforward way to resolve all possible graphs by brute-forcing every
@@ -31,10 +38,10 @@ DependencyGroup: TypeAlias = list[IOptionName]
 
 class OptionGraph:
     def __init__(self) -> None:
-        self.nodes: set[IOptionName] = set()
-        self.edges: dict[IOptionName, list[IOptionName]] = {}
+        self.nodes: set[OptionName] = set()
+        self.edges: dict[OptionName, list[OptionName]] = {}
 
-    def addNode(self, name: IOptionName, children: list[IOptionName] = None) -> None:
+    def addNode(self, name: OptionName, children: list[OptionName] = None) -> None:
         if name in self.nodes:
             raise RuntimeError(f"Node {name} already exists")
         self.nodes.add(name)
@@ -43,25 +50,25 @@ class OptionGraph:
             for child in children:
                 self.addEdge(name, child)
 
-    def addEdge(self, start: IOptionName, end: IOptionName) -> None:
+    def addEdge(self, start: OptionName, end: OptionName) -> None:
         if start not in self.nodes:
             raise RuntimeError(f"Start node '{start}' doesn't exist")
         if end not in self.nodes:
             raise RuntimeError(f"End node '{end}' doesn't exist")
 
-        paths: list[list[IOptionName]] = self.getPaths(end, start)
+        paths: list[list[OptionName]] = self.getPaths(end, start)
         self.edges[start].append(end)
 
         if paths is None:
             return
         raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
 
-    def getPaths(self, start: IOptionName, end: IOptionName) -> Optional[list[list[IOptionName]]]:
+    def getPaths(self, start: OptionName, end: OptionName) -> Optional[list[list[OptionName]]]:
         if start == end:
             return [[end]]
         if not self.edges[start]:
             return None
-        result: list[list[IOptionName]] = []
+        result: list[list[OptionName]] = []
         for child in self.edges[start]:
             if (paths := self.getPaths(child, end)) is not None:
                 for path in paths:
@@ -70,7 +77,7 @@ class OptionGraph:
             return result
         return None
 
-    def collectDependencies(self, option_name: IOptionName) -> DependencyGroup:
+    def collectDependencies(self, option_name: OptionName) -> DependencyGroup:
         dependencies: DependencyGroup = []
         for child in self.edges[option_name]:
             dependencies.append(child)
@@ -81,32 +88,32 @@ class OptionGraph:
         longest_path: int = 0
         for start_node in self.nodes:
             for end_node in self.nodes:
-                paths: list[list[IOptionName]] = self.getPaths(start_node, end_node)
+                paths: list[list[OptionName]] = self.getPaths(start_node, end_node)
                 if paths is None:
                     continue
                 longest_path = max(longest_path, *[len(path) for path in paths])
         return longest_path
 
 
-Edge: TypeAlias = tuple[IOptionName, IOptionName]
+Edge: TypeAlias = tuple[OptionName, OptionName]
 
 
-ExclusiveGroup: TypeAlias = tuple[IOptionName, ...]
+ExclusiveGroup: TypeAlias = tuple[OptionName, ...]
 ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 
 
 class DependenciesResolver:
     def __init__(
-        self, option_raw_dependencies: dict[IOptionName, Depends], exclusive_group_rules: list[ExclusiveGroupRule]
+        self, option_raw_dependencies: dict[OptionName, Depends], exclusive_group_rules: list[ExclusiveGroupRule]
     ):
         edge_combinations: list[list[Edge]] = self.createEdgeCombinations(option_raw_dependencies)
         self.graphs: list[OptionGraph] = []
-        options: list[IOptionName] = [name for name in option_raw_dependencies.keys()]
+        options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
         for combination in edge_combinations:
             self.graphs.append(self.buildGraph(options, combination, exclusive_group_rules))
 
     @staticmethod
-    def createEdgeCombinations(option_raw_dependencies: dict[IOptionName, Depends]) -> list[list[Edge]]:
+    def createEdgeCombinations(option_raw_dependencies: dict[OptionName, Depends]) -> list[list[Edge]]:
         edge_combinations: list[list[Edge]] = [[]]
         for option_name, raw_dependencies in option_raw_dependencies.items():
             logging.info(f"Adding option {option_name}")
@@ -127,7 +134,7 @@ class DependenciesResolver:
 
     @staticmethod
     def buildGraph(
-        options: list[IOptionName], relations: list[Edge], exclusive_group_rules: list[ExclusiveGroupRule]
+        options: list[OptionName], relations: list[Edge], exclusive_group_rules: list[ExclusiveGroupRule]
     ) -> OptionGraph:
         graph: OptionGraph = OptionGraph()
         for option in options:
@@ -151,7 +158,7 @@ class DependenciesResolver:
                                     )
         return graph
 
-    def collectDependencies(self, option_name: IOptionName) -> list[DependencyGroup]:
+    def collectDependencies(self, option_name: OptionName) -> list[DependencyGroup]:
         dependencies: list[DependencyGroup] = []
         for graph in self.graphs:
             dependencies.append(graph.collectDependencies(option_name))

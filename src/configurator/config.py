@@ -13,10 +13,10 @@ from typing_extensions import Unpack
 
 from configurator.arg_parser import IArgParser
 from configurator.change_poller import ChangePoller
-from configurator.option_name import IOptionName
-from configurator.options import MISSING, Option
+from configurator.option import MISSING, Option, OptionName
+from configurator.option_group import OptionGroup
 from configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
-from configurator.sys_options import SysOptionName, sys_options as SysOptions
+from configurator.sys_options import SystemOption
 
 
 ReloadCallback: TypeAlias = Callable[[Unpack[tuple[Any, ...]]], None]
@@ -27,20 +27,39 @@ class IConfig:
     def __init__(
         self,
         arg_parser: IArgParser,
-        registered_options: list[Option],
+        option_groups: list[type[OptionGroup]],
         exclusive_group_rules: list[ExclusiveGroupRule] = None,
     ):
+        self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: IArgParser = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
             exclusive_group_rules if exclusive_group_rules is not None else []
         )
 
-        option_mapping: dict[IOptionName, Option] = {x.name: x for x in registered_options}
-        sys_option_mapping: dict[IOptionName, Option] = {x.name: x for x in SysOptions}
+        # TODO Maybe there is a way to check for prefixes validity
+        # We think of option group prefixes as of syntactic sugar, so we don't enforce any checks on how user organized his options.
+        # However, this can lead to multiple options have similar names, which is a problem for us.
+        # User could've created several options with exact same name by mistake too.
+        option_parents: dict[OptionName, type[OptionGroup]] = {}
+        registered_options: list[Option] = []
+        for option_group in option_groups:
+            options: list[Option] = option_group.getOptions()
+            for option in options:
+                if option.name in option_parents:
+                    raise RuntimeError(
+                        f"Option '{option.name}' from '{option_group}' is already registered in '{option_parents[option.name]}'"
+                    )
+            option_parents.update({option.name: option_group for option in options})
+            registered_options.extend(options)
+        logging.info(f"Registered options: {registered_options}")
+
+        option_mapping: dict[OptionName, Option] = {x.name: x for x in registered_options}
+        sys_option_mapping: dict[OptionName, Option] = {x.name: x for x in SystemOption.getOptions()}
         if len(option_mapping.keys() & sys_option_mapping.keys()) > 0:
             raise RuntimeError("Provided list of registered options overlaps with system ones, consider renaming")
+
         # This is a composition of all possible options, which will be used by this config
-        self.registered_options: dict[IOptionName, Option] = option_mapping | sys_option_mapping
+        self.registered_options: dict[OptionName, Option] = option_mapping | sys_option_mapping
 
         self.reload_lock: Lock = Lock()
         self.change_poller: ChangePoller = None
@@ -48,7 +67,7 @@ class IConfig:
         self.old_values: dict[property, Any] = {}
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
 
-        self.options: dict[IOptionName, Option] = {}
+        self.options: dict[OptionName, Option] = {}
         self.path_to_config: Path = self.arg_parser.getConfigFilepath()
         if not self.path_to_config.is_file():
             raise RuntimeError(f"Config file at '{self.path_to_config}' doesn't exist or isn't a file")
@@ -60,7 +79,7 @@ class IConfig:
             r"^#.*?\n$|^\n$|^(?P<name>\w+?)=(?P<value>'.+?'|\".+?\"|\d+?)(?:\s*?#.*?)?\n$"
         )
 
-        option_dependencies: dict[IOptionName, Depends] = {
+        option_dependencies: dict[OptionName, Depends] = {
             option.name: option.dependencies for option in self.registered_options.values()
         }
         self.dependencies_resolver: DependenciesResolver = DependenciesResolver(
@@ -124,10 +143,10 @@ class IConfig:
         if diff := parsed_arg_names.difference(allowed_options):
             raise RuntimeError(f"Invalid option names in config: {diff}")
 
-    def _resolveExclusiveGroups(self, options: dict[IOptionName, Option]) -> None:
+    def _resolveExclusiveGroups(self, options: dict[OptionName, Option]) -> None:
         for exclusive_group_rule in self.exclusive_group_rules:
             group_defined: list[bool] = []
-            options_set: list[set[IOptionName]] = []
+            options_set: list[set[OptionName]] = []
             for option_group in exclusive_group_rule:
                 options_set.append(
                     set(option_name for option_name in option_group if options[option_name].raw_value is not MISSING)
@@ -144,7 +163,7 @@ class IConfig:
                 for option_name in option_group:
                     options[option_name].required = False
 
-    def _resolveOptionDependencies(self, options: dict[IOptionName, Option]) -> None:
+    def _resolveOptionDependencies(self, options: dict[OptionName, Option]) -> None:
         for option_name, option in options.items():
             if option.dependencies is None:
                 continue
@@ -167,6 +186,25 @@ class IConfig:
             if not group_fulfilled:
                 options[option_name].required = False
 
+    def _flattenArguments(self, args: dict[str, Any]) -> dict[str, Any]:
+        for group in sorted(self.option_groups, key=lambda x: len(x._prefix_path), reverse=True):
+            logging.info(f"Config: Flattening {group._prefix_path}")
+            if not group._prefix_path:
+                continue
+            current_args: dict[str, Any] = args
+            for entry in group._prefix_path[:-1]:
+                current_args = current_args[entry]
+            logging.info(f"Config: Start {current_args}")
+            option_prefix = ""
+            if group._real:
+                option_prefix = f"{group._prefix_path[-1]}_"
+            for key, value in current_args[group._prefix_path[-1]].items():
+                current_args[option_prefix + key] = value
+            current_args.pop(group._prefix_path[-1])
+            logging.info(f"Config: Got {current_args}")
+            logging.info(f"Config: Flattened {args}")
+        return args
+
     def _recreate(self):
         # Load args from config file
         try:
@@ -177,6 +215,9 @@ class IConfig:
         if not isinstance(file_args, dict):
             raise RuntimeError(f"Config file must contain a JSON dictionary")
 
+        # TODO flatten dict
+        file_args = self._flattenArguments(file_args)
+
         # Read all args from command line
         cmd_args: dict[str, Any] = self.arg_parser.getArgs()
 
@@ -184,8 +225,8 @@ class IConfig:
         # Filepath resolve order (until first success): CMD args, file args, then lookup in this directory.
         env_vars: dict[str, Any] = {}
         for source, env_filepath in [
-            ("File args", file_args.get(SysOptionName.ENV_FILEPATH, None)),
-            ("CMD args", cmd_args[SysOptionName.ENV_FILEPATH]),
+            ("File args", file_args.get(SystemOption.ENV_FILEPATH.name, None)),
+            ("CMD args", cmd_args[SystemOption.ENV_FILEPATH.name]),
             ("Configurator lib directory", Path(__file__).parent / ".env"),
         ]:
             logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
@@ -211,9 +252,7 @@ class IConfig:
         # At this point we performed all possible checks on arguments as is.
         # We can move their values to the corresponding options.
         logging.info(f"Config: Collected arguments: {toReadableJSON(args)}")
-        options: dict[IOptionName, Option] = {key: copy(value) for key, value in self.registered_options.items()}
-        # TODO: This type mismatch between str and IOptionName bugs me,
-        #  but seems to be safe as we checked args for name mismatches beforehand.
+        options: dict[OptionName, Option] = {key: copy(value) for key, value in self.registered_options.items()}
         for arg_name, value in args.items():
             options[arg_name].raw_value = value
 
@@ -296,7 +335,7 @@ class IConfig:
             logging.info(f"Config: Reload completed")
 
     @staticmethod
-    def _checkForMissing(options: dict[IOptionName, Option]) -> None:
+    def _checkForMissing(options: dict[OptionName, Option]) -> None:
         # All required options must be set
         set_options: set[str] = set(x for x in options.keys() if options[x].raw_value is not MISSING)
         all_options: set[str] = set(options.keys())
@@ -309,7 +348,7 @@ class IConfig:
             logging.warning(f"Config: Options '{diff}' are omitted")
 
     @staticmethod
-    def _validateOptions(options: dict[IOptionName, Option]) -> None:
+    def _validateOptions(options: dict[OptionName, Option]) -> None:
         for option in options.values():
             if option.raw_value is MISSING:
                 continue
@@ -332,8 +371,8 @@ class IConfig:
         logging.info(f"Overridden config keys: {toReadableJSON(overridden_keys)}")
         return base_args
 
-    def _getOptionValue(self, option_name: IOptionName) -> Any:
-        return self.options[option_name].value
+    def _getOptionValue(self, option: Option) -> Any:
+        return self.options[option.name].value
 
     def enableHotReload(self):
         self.change_poller = ChangePoller(self.config_filepath, self._onReload)
@@ -348,8 +387,8 @@ class IConfig:
 
     @property
     def config_filepath(self) -> Path:
-        return self._getOptionValue(SysOptionName.CONFIG_FILEPATH)
+        return self._getOptionValue(SystemOption.CONFIG_FILEPATH)
 
     @property
     def env_filepath(self) -> Optional[Path]:
-        return self._getOptionValue(SysOptionName.ENV_FILEPATH)
+        return self._getOptionValue(SystemOption.ENV_FILEPATH)

@@ -1,16 +1,10 @@
 from typing import Optional
 
-from configurator.option_name import IOptionName
-from configurator.options import Option
+from configurator.option import Option
+from configurator.option_group import OptionGroup
 from configurator.validators import asOptionalPath, validatePath
 
 
-class SysOptionName(IOptionName):
-    CONFIG_FILEPATH = "config_filepath"
-    ENV_FILEPATH = "env_filepath"
-
-
-sys_options: list[Option] = [
-    Option(SysOptionName.CONFIG_FILEPATH, str, validatePath),
-    Option(SysOptionName.ENV_FILEPATH, Optional[str], asOptionalPath, False),
-]
+class SystemOption(OptionGroup):
+    CONFIG_FILEPATH = Option("config_filepath", str, validatePath)
+    ENV_FILEPATH = Option("env_filepath", Optional[str], asOptionalPath, False)

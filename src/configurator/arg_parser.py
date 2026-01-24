@@ -6,7 +6,7 @@ from typing import Any
 
 from json_helpers.helpers import toReadableJSON
 
-from configurator.sys_options import SysOptionName
+from configurator.sys_options import SystemOption
 
 
 class IArgParser:
@@ -18,13 +18,13 @@ class IArgParser:
             "--config-filepath",
             required=True,
             help="Path to config file, required",
-            dest=SysOptionName.CONFIG_FILEPATH,
+            dest=SystemOption.CONFIG_FILEPATH.name,
         )
         self.parser.add_argument(
             "--env-filepath",
             required=False,
             help="Path to .env file",
-            dest=SysOptionName.ENV_FILEPATH,
+            dest=SystemOption.ENV_FILEPATH.name,
         )
         self.args: argparse.Namespace = None
 
@@ -41,7 +41,7 @@ class IArgParser:
         return self.getArgs()[name]
 
     def getConfigFilepath(self) -> Path:
-        return Path(self.getArg(SysOptionName.CONFIG_FILEPATH))
+        return Path(self.getArg(SystemOption.CONFIG_FILEPATH.name))
 
     @staticmethod
     def __json__() -> dict[str, str]:
