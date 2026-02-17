@@ -137,9 +137,12 @@ class IConfig:
         return variables
 
     def _validateOptionNames(self, args: dict[str, Any]) -> None:
-        parsed_arg_names: set[str] = set(args.keys())
+        logging.debug(f"Config: Validating option names")
         # All options must be from registered ones
         allowed_options: set[str] = set(self.registered_options.keys())
+        logging.debug(f"Config: Allowed options: '{allowed_options}'")
+
+        parsed_arg_names: set[str] = set(args.keys())
         if diff := parsed_arg_names.difference(allowed_options):
             raise RuntimeError(f"Invalid option names in config: {diff}")
 
@@ -194,15 +197,15 @@ class IConfig:
             current_args: dict[str, Any] = args
             for entry in group._prefix_path[:-1]:
                 current_args = current_args[entry]
-            logging.info(f"Config: Start {current_args}")
+            logging.info(f"Config: Start {toReadableJSON(current_args)}")
             option_prefix = ""
             if group._real:
                 option_prefix = f"{group._prefix_path[-1]}_"
             for key, value in current_args[group._prefix_path[-1]].items():
                 current_args[option_prefix + key] = value
             current_args.pop(group._prefix_path[-1])
-            logging.info(f"Config: Got {current_args}")
-            logging.info(f"Config: Flattened {args}")
+            logging.info(f"Config: Got {toReadableJSON(current_args)}")
+            logging.info(f"Config: Flattened {toReadableJSON(args)}")
         return args
 
     def _recreate(self):
