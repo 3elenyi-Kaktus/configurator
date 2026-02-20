@@ -22,6 +22,7 @@ class IArgParser:
         )
         self.parser.add_argument(
             "--env-filepath",
+            default=argparse.SUPPRESS,
             required=False,
             help="Path to .env file",
             dest=SystemOption.ENV_FILEPATH.name,

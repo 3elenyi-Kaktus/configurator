@@ -13,6 +13,15 @@ from typing_extensions import Unpack
 
 from configurator.arg_parser import IArgParser
 from configurator.change_poller import ChangePoller
+from configurator.errors import (
+    ExclusiveGroupViolation,
+    InvalidConfig,
+    InvalidOptionName,
+    InvalidOptionValue,
+    MissingOption,
+    OptionNameOverlap,
+    UnfulfilledDependency,
+)
 from configurator.option import MISSING, Option, OptionName
 from configurator.option_group import OptionGroup
 from configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
@@ -46,7 +55,7 @@ class IConfig:
             options: list[Option] = option_group.getOptions()
             for option in options:
                 if option.name in option_parents:
-                    raise RuntimeError(
+                    raise OptionNameOverlap(
                         f"Option '{option.name}' from '{option_group}' is already registered in '{option_parents[option.name]}'"
                     )
             option_parents.update({option.name: option_group for option in options})
@@ -56,7 +65,7 @@ class IConfig:
         option_mapping: dict[OptionName, Option] = {x.name: x for x in registered_options}
         sys_option_mapping: dict[OptionName, Option] = {x.name: x for x in SystemOption.getOptions()}
         if len(option_mapping.keys() & sys_option_mapping.keys()) > 0:
-            raise RuntimeError("Provided list of registered options overlaps with system ones, consider renaming")
+            raise OptionNameOverlap("Provided list of registered options overlaps with system ones, consider renaming")
 
         # This is a composition of all possible options, which will be used by this config
         self.registered_options: dict[OptionName, Option] = option_mapping | sys_option_mapping
@@ -70,9 +79,9 @@ class IConfig:
         self.options: dict[OptionName, Option] = {}
         self.path_to_config: Path = self.arg_parser.getConfigFilepath()
         if not self.path_to_config.is_file():
-            raise RuntimeError(f"Config file at '{self.path_to_config}' doesn't exist or isn't a file")
+            raise InvalidConfig(f"Config file at '{self.path_to_config}' doesn't exist or isn't a file")
         if self.path_to_config.suffix != ".json":
-            raise RuntimeError(f"Specified file is not a JSON file: '{self.path_to_config}'")
+            raise InvalidConfig(f"Specified file is not a JSON file: '{self.path_to_config}'")
 
         # TODO  Simplify pattern (comment and normal lines)
         self.env_file_pattern: Pattern = re.compile(
@@ -196,6 +205,8 @@ class IConfig:
                 continue
             current_args: dict[str, Any] = args
             for entry in group._prefix_path[:-1]:
+                if entry not in current_args:
+                    raise RuntimeError(f"Config: Expected key {entry}, but none was found")
                 current_args = current_args[entry]
             logging.info(f"Config: Start {toReadableJSON(current_args)}")
             option_prefix = ""
@@ -213,13 +224,16 @@ class IConfig:
         try:
             file_args: dict[str, Any] = self._readConfigFile()
         except RuntimeError as exc:
-            raise RuntimeError(f"Failed to load config file from '{self.path_to_config}'") from exc
+            raise InvalidConfig(f"Failed to load config file from '{self.path_to_config}'") from exc
 
         if not isinstance(file_args, dict):
-            raise RuntimeError(f"Config file must contain a JSON dictionary")
+            raise InvalidConfig(f"Config file must contain a JSON dictionary")
 
-        # TODO flatten dict
-        file_args = self._flattenArguments(file_args)
+        # Flatten config dictionary
+        try:
+            file_args = self._flattenArguments(file_args)
+        except RuntimeError as exc:
+            raise InvalidConfig(f"Couldn't flatten config file") from exc
 
         # Read all args from command line
         cmd_args: dict[str, Any] = self.arg_parser.getArgs()
@@ -229,7 +243,7 @@ class IConfig:
         env_vars: dict[str, Any] = {}
         for source, env_filepath in [
             ("File args", file_args.get(SystemOption.ENV_FILEPATH.name, None)),
-            ("CMD args", cmd_args[SystemOption.ENV_FILEPATH.name]),
+            ("CMD args", cmd_args.get(SystemOption.ENV_FILEPATH.name)),
             ("Configurator lib directory", Path(__file__).parent / ".env"),
         ]:
             logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
@@ -250,7 +264,7 @@ class IConfig:
         try:
             self._validateOptionNames(args)
         except BaseException as exc:
-            raise RuntimeError(f"Failed to validate option names") from exc
+            raise InvalidOptionName(f"Failed to validate option names") from exc
 
         # At this point we performed all possible checks on arguments as is.
         # We can move their values to the corresponding options.
@@ -269,7 +283,7 @@ class IConfig:
         try:
             self._resolveExclusiveGroups(options)
         except BaseException as exc:
-            raise RuntimeError(f"One of exclusive options rules was violated") from exc
+            raise ExclusiveGroupViolation(f"One of exclusive options rules was violated") from exc
 
         # We resolved which exclusive group rules had to be applied, now we must check the option dependencies.
         # If not all dependencies for option are satisfied, then we have to do 2 things:
@@ -278,21 +292,23 @@ class IConfig:
         try:
             self._resolveOptionDependencies(options)
         except BaseException as exc:
-            raise RuntimeError(f"One of options was set, despite of not fulfilled dependencies for it") from exc
+            raise UnfulfilledDependency(
+                f"One of options was set, despite of not fulfilled dependencies for it"
+            ) from exc
 
         # We can check for missing options now.
         # `required` flag could have been mangled by previous resolves and differ from registered options list.
         try:
             self._checkForMissing(options)
         except BaseException as exc:
-            raise RuntimeError(f"Some of required options were not set") from exc
+            raise MissingOption(f"Some of required options were not set") from exc
 
         # Nothing seems off about passed options (at least on config logic level).
         # We can safely run userspace argument checks.
         try:
             self._validateOptions(options)
         except BaseException as exc:
-            raise RuntimeError(f"Failed to validate config options") from exc
+            raise InvalidOptionValue(f"Failed to validate config options") from exc
 
         # We successfully validated all options without errors and can save them
         logging.info(f"Config: Converted to options: {toReadableJSON(options)}")
