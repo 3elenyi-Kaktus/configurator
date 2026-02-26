@@ -83,7 +83,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "json-helpers", git = "https://git.int.rnd-42.ru/ffatkullin/python-templates.git?subdirectory=json-helpers&rev=json-helpers-v0.2.0" },
+    { name = "json-helpers", git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git?rev=v1.0.0" },
     { name = "watchdog", specifier = ">=6.0.0,<7.0.0" },
 ]
 
@@ -104,8 +104,8 @@ wheels = [
 
 [[package]]
 name = "json-helpers"
-version = "0.2.0"
-source = { git = "https://git.int.rnd-42.ru/ffatkullin/python-templates.git?subdirectory=json-helpers&rev=json-helpers-v0.2.0#a2ac03cbffae40cb34296e9cea70d4713aea111a" }
+version = "1.0.0"
+source = { git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git?rev=v1.0.0#c234992c421387f76f5b187f02bbd7051fa88d5b" }
 
 [[package]]
 name = "mypy-extensions"

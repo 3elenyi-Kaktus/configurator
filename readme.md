@@ -1,6 +1,6 @@
 # Configurator
 
-### by 3elenyi Kaktus
+### _by 3elenyi Kaktus_
 
 A simple settings configurator for projects management.
 
@@ -386,6 +386,7 @@ If you plan to change arguments in runtime, consider limiting amount of argument
 
 # InDev Features
 ## todo `String literals should be unique, since there is no way to distinguish them.`
+## todo add method to base argparser which automatically suppresses arguments if they were not supplied (argparse.SUPPRESS)
 ## todo imports in \_\_all__
 ## todo check for duplicate options (use sets) in dependencies and exclusive groups
 ## todo rework validators

@@ -1,8 +1,3 @@
-[build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
-
-
 [project]
 name = "configurator"
 dynamic = ["version"]
@@ -20,14 +15,6 @@ dev = [
 ]
 
 
-[tool.setuptools.dynamic]
-version = {attr = "configurator.__version__"}
-
-
-[tool.uv.sources]
-json-helpers = { git = "https://git.int.rnd-42.ru/ffatkullin/python-templates.git", subdirectory = "json-helpers", rev = "json-helpers-v0.2.0" }
-
-
 [tool.isort]
 profile = "black"
 extend_skip_glob = []
@@ -39,6 +26,7 @@ combine_as_imports = true
 force_sort_within_sections = true
 color_output = true
 
+
 [tool.black]
 line-length = 120
 extend-exclude = '''
@@ -46,3 +34,16 @@ extend-exclude = '''
   .venv
 )
 '''
+
+
+[tool.setuptools.dynamic]
+version = {attr = "configurator.__version__"}
+
+
+[tool.uv.sources]
+json-helpers = { git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git", rev = "v1.0.0" }
+
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
