@@ -27,7 +27,7 @@ def internalField(field: str) -> str:
 
 if DEBUG:
 
-    def processClass(cls):
+    def processClass(cls) -> Any:
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(levelname)-5s:    %(message)s",
@@ -97,7 +97,7 @@ if DEBUG:
 
 else:
 
-    def processClass(cls):
+    def processClass(cls) -> Any:
         configurable_fields: list = []
         for name, type_ in cls.__annotations__.items():
             if isinstance(getattr(cls, name, None), Configurable):

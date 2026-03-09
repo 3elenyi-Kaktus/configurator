@@ -2,7 +2,7 @@ import argparse
 from argparse import ArgumentParser
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from json_helpers.helpers import toReadableJSON
 
@@ -27,7 +27,7 @@ class IArgParser:
             help="Path to .env file",
             dest=SystemOption.ENV_FILEPATH.name,
         )
-        self.args: argparse.Namespace = None
+        self.args: Optional[argparse.Namespace] = None
 
     def parseArgs(self):
         self.args = self.parser.parse_args()

@@ -1,11 +1,12 @@
 from copy import deepcopy
 import logging
+from typing import Optional
 
 from configurator.option import Option
 
 
 class OptionGroup:
-    _prefix: str = None
+    _prefix: Optional[str] = None
     _real: bool = True
     _prefix_path: list[str] = []
     _real_prefix_path: list[str] = []
@@ -70,7 +71,12 @@ def _preprocessOptionGroup(cls: type[OptionGroup], parent: type[OptionGroup], pr
 
 
 def optionGroup(
-    cls: type[OptionGroup] = None, /, *, parent: type[OptionGroup] = OptionGroup, prefix: str = None, real: bool = True
+    cls: Optional[type[OptionGroup]] = None,
+    /,
+    *,
+    parent: type[OptionGroup] = OptionGroup,
+    prefix: Optional[str] = None,
+    real: bool = True,
 ):
     def wrapper(cls_):
         return _preprocessOptionGroup(cls_, parent, prefix, real)

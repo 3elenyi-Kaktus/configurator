@@ -37,7 +37,7 @@ class IConfig:
         self,
         arg_parser: IArgParser,
         option_groups: list[type[OptionGroup]],
-        exclusive_group_rules: list[ExclusiveGroupRule] = None,
+        exclusive_group_rules: Optional[list[ExclusiveGroupRule]] = None,
     ):
         self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: IArgParser = arg_parser
@@ -71,7 +71,7 @@ class IConfig:
         self.registered_options: dict[OptionName, Option] = option_mapping | sys_option_mapping
 
         self.reload_lock: Lock = Lock()
-        self.change_poller: ChangePoller = None
+        self.change_poller: Optional[ChangePoller] = None
         self.properties: Properties = self._getProps()
         self.old_values: dict[property, Any] = {}
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
@@ -128,7 +128,7 @@ class IConfig:
             logging.error(f"Config: Failed to read .env file from '{path}'")
             return None
 
-        variables: dict[str, Any] = {}
+        variables: dict[str, int | str] = {}
         for line in lines:
             if (match := self.env_file_pattern.fullmatch(line)) is None:
                 logging.error(f"Config: .env file seems to be malformed. Line: '{line}'")
@@ -136,11 +136,12 @@ class IConfig:
             name: str = match.group("name")
             if name is None:
                 continue
-            value: str = match.group("value")
-            if value[0] in "\"'" and value[-1] in "\"'":
-                value = value[1:-1]
+            raw_value: str = match.group("value")
+            value: int | str
+            if raw_value[0] in "\"'" and raw_value[-1] in "\"'":
+                value = raw_value[1:-1]
             else:
-                value = int(value)
+                value = int(raw_value)
             variables[name.lower()] = value
         logging.info(f"Config: Loaded env variables successfully: {toReadableJSON(variables)}")
         return variables
@@ -181,21 +182,16 @@ class IConfig:
                 continue
 
             dependency_groups: list[DependencyGroup] = self.dependencies_resolver.collectDependencies(option_name)
-            group_fulfilled: bool = False
             for dependency_group in dependency_groups:
-                group_fulfilled: bool = True
-                for dependency in dependency_group:
-                    if options[dependency].raw_value is MISSING:
-                        group_fulfilled = False
-                        break
-                if group_fulfilled:
+                if all(options[dependency].raw_value is not MISSING for dependency in dependency_group):
+                    # Dependency group is fulfilled, we can skip further checking of this option
                     break
-
-            if not group_fulfilled and options[option_name].raw_value is not MISSING:
-                raise RuntimeError(
-                    f"Option {option_name} was set, but none of it's dependency group rules {dependency_groups} were fulfilled"
-                )
-            if not group_fulfilled:
+            else:
+                # We iterated over all dependency groups, none were fulfilled
+                if options[option_name].raw_value is not MISSING:
+                    raise RuntimeError(
+                        f"Option {option_name} was set, but none of it's dependency group rules {dependency_groups} were fulfilled"
+                    )
                 options[option_name].required = False
 
     def _flattenArguments(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -219,7 +215,7 @@ class IConfig:
             logging.info(f"Config: Flattened {toReadableJSON(args)}")
         return args
 
-    def _recreate(self):
+    def _recreate(self) -> None:
         # Load args from config file
         try:
             file_args: dict[str, Any] = self._readConfigFile()
@@ -249,7 +245,7 @@ class IConfig:
             logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
             if env_filepath is None:
                 continue
-            variables: dict[str, Any] = self._readEnvFile(Path(env_filepath))
+            variables: Optional[dict[str, Any]] = self._readEnvFile(Path(env_filepath))
             if variables is not None:
                 env_vars = variables
                 break
@@ -314,7 +310,7 @@ class IConfig:
         logging.info(f"Config: Converted to options: {toReadableJSON(options)}")
         self.options = options
 
-    def _onReload(self):
+    def _onReload(self) -> None:
         logging.info(f"Config: Reload requested")
         with self.reload_lock:
             logging.info(f"Config: Reload lock acquired, starting reload")

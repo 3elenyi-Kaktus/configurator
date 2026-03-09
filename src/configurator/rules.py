@@ -41,7 +41,7 @@ class OptionGraph:
         self.nodes: set[OptionName] = set()
         self.edges: dict[OptionName, list[OptionName]] = {}
 
-    def addNode(self, name: OptionName, children: list[OptionName] = None) -> None:
+    def addNode(self, name: OptionName, children: Optional[list[OptionName]] = None) -> None:
         if name in self.nodes:
             raise RuntimeError(f"Node {name} already exists")
         self.nodes.add(name)
@@ -56,12 +56,11 @@ class OptionGraph:
         if end not in self.nodes:
             raise RuntimeError(f"End node '{end}' doesn't exist")
 
-        paths: list[list[OptionName]] = self.getPaths(end, start)
-        self.edges[start].append(end)
+        paths: Optional[list[list[OptionName]]] = self.getPaths(end, start)
+        if paths is not None:
+            raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
 
-        if paths is None:
-            return
-        raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
+        self.edges[start].append(end)
 
     def getPaths(self, start: OptionName, end: OptionName) -> Optional[list[list[OptionName]]]:
         if start == end:
@@ -88,7 +87,7 @@ class OptionGraph:
         longest_path: int = 0
         for start_node in self.nodes:
             for end_node in self.nodes:
-                paths: list[list[OptionName]] = self.getPaths(start_node, end_node)
+                paths: Optional[list[list[OptionName]]] = self.getPaths(start_node, end_node)
                 if paths is None:
                     continue
                 longest_path = max(longest_path, *[len(path) for path in paths])

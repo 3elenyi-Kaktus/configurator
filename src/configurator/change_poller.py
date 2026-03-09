@@ -30,11 +30,11 @@ class EventsHandler(FileSystemEventHandler):
         # Reject any events not related to target file
         if (
             event.event_type == "created"
-            and Path(event.src_path) == self.filepath
+            and Path(str(event.src_path)) == self.filepath
             or event.event_type == "modified"
-            and Path(event.src_path) == self.filepath
+            and Path(str(event.src_path)) == self.filepath
             or event.event_type == "moved"
-            and Path(event.dest_path) == self.filepath
+            and Path(str(event.dest_path)) == self.filepath
         ):
             getattr(self, f"on_{event.event_type}")(event)
 
@@ -56,7 +56,7 @@ class EventsHandler(FileSystemEventHandler):
         logging.info(f"EventsHandler: Triggered on moving file to targeted filepath")
         self._trigger()
 
-    def _trigger(self):
+    def _trigger(self) -> None:
         callback_thread: Thread = Thread(target=self.callback)
         callback_thread.start()
 
@@ -67,14 +67,14 @@ class ChangePoller:
         self.callback: Callable[[], None] = callback
 
         self.stop_requested: bool = False
-        self.poller: Thread = None
+        self.poller: Thread = Thread(target=self._poll)
 
-    def _poll(self):
+    def _poll(self) -> None:
         events_handler: EventsHandler = EventsHandler(self.filepath, self.callback)
         observer: BaseObserver = Observer()
         observer.schedule(
             events_handler,
-            self.filepath.parent,
+            str(self.filepath.parent),
             recursive=False,
             event_filter=[FileCreatedEvent, FileModifiedEvent, FileMovedEvent],
         )
@@ -96,10 +96,9 @@ class ChangePoller:
 
     def startPolling(self) -> None:
         logging.info(f"ChangePoller: Starting up")
-        self.poller = Thread(target=self._poll)
         self.poller.start()
 
-    def stopPolling(self):
+    def stopPolling(self) -> None:
         logging.info(f"ChangePoller: Stop requested")
         self.stop_requested = True
         self.poller.join()
