@@ -91,8 +91,9 @@ class IConfig:
         option_dependencies: dict[OptionName, Depends] = {
             option.name: option.dependencies for option in self.registered_options.values()
         }
+        option_graphs_dirpath: Optional[Path] = self.arg_parser.getOptionGraphsDirpath()
         self.dependencies_resolver: DependenciesResolver = DependenciesResolver(
-            option_dependencies, self.exclusive_group_rules
+            option_graphs_dirpath, option_dependencies, self.exclusive_group_rules
         )
 
     def _getProps(self) -> Properties:
@@ -407,3 +408,7 @@ class IConfig:
     @property
     def env_filepath(self) -> Optional[Path]:
         return self._getOptionValue(SystemOption.ENV_FILEPATH)
+
+    @property
+    def option_graphs_dirpath(self) -> Optional[Path]:
+        return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)

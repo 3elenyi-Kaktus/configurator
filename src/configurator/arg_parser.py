@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from json_helpers.helpers import toReadableJSON
 
+from configurator.option import MISSING, Missing
 from configurator.sys_options import SystemOption
 
 
@@ -27,22 +28,36 @@ class IArgParser:
             help="Path to .env file",
             dest=SystemOption.ENV_FILEPATH.name,
         )
-        self.args: Optional[argparse.Namespace] = None
+        self.parser.add_argument(
+            "--option-graphs-dirpath",
+            default=argparse.SUPPRESS,
+            required=False,
+            help="Path to directory for outputting option graphs",
+            dest=SystemOption.OPTION_GRAPHS_DIRPATH.name,
+        )
+        self.args: dict[str, Any] = {}
 
-    def parseArgs(self):
-        self.args = self.parser.parse_args()
-        logging.info(f"Parsed args: {toReadableJSON(vars(self.args))}")
+    def parseArgs(self) -> None:
+        args_namespace: argparse.Namespace = self.parser.parse_args()
+        self.args = vars(args_namespace)
+        logging.info(f"Parsed args: {toReadableJSON(self.args)}")
 
     def getArgs(self) -> dict[str, Any]:
-        if self.args is None:
+        if not self.args:
             self.parseArgs()
-        return vars(self.args)
+        return self.args
 
     def getArg(self, name: str) -> Any:
-        return self.getArgs()[name]
+        if not self.args:
+            self.parseArgs()
+        return self.args.get(name, MISSING)
 
     def getConfigFilepath(self) -> Path:
         return Path(self.getArg(SystemOption.CONFIG_FILEPATH.name))
+
+    def getOptionGraphsDirpath(self) -> Optional[Path]:
+        arg: str | Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
+        return Path(arg) if arg is not MISSING else None
 
     @staticmethod
     def __json__() -> dict[str, str]:

@@ -36,16 +36,11 @@ class Option:
             self.config_inner_type = Optional[self.config_inner_type]
 
     def __json__(self):
-        value = self.value
-        if isinstance(value, Path):
-            value = str(value)
-        elif isinstance(value, dt):
-            value = str(value)
         return {
             "name": self.name,
             "config_inner_type": str(self.config_inner_type),
             "required": self.required,
             "groups": self.groups,
             "raw_value": self.raw_value,
-            "value": value,
+            "value": self.value,
         }

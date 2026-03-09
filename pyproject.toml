@@ -4,6 +4,7 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
     "json-helpers",
+    "pygraphviz~=1.14",
     "watchdog>=6.0.0,<7.0.0",
 ]
 
@@ -13,6 +14,7 @@ dev = [
     "black==25.12.0",
     "isort==7.0.0",
     "mypy>=1.19.1",
+    "pytest>=9.0.2",
     "ruff>=0.15.5",
 ]
 
@@ -47,7 +49,7 @@ version = {attr = "configurator.__version__"}
 
 
 [tool.uv.sources]
-json-helpers = { git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git", rev = "v1.0.1" }
+json-helpers = { git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git", rev = "v2.0.0" }
 
 
 [build-system]

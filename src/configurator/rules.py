@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional, TypeAlias
 from uuid import uuid4
+
+from pygraphviz import AGraph
 
 from configurator.commons import OptionName
 
@@ -37,7 +40,10 @@ DependencyGroup: TypeAlias = list[OptionName]
 
 
 class OptionGraph:
-    def __init__(self) -> None:
+    def __init__(self, graphs_dirpath: Optional[Path]) -> None:
+        self.graphs_dirpath: Optional[Path] = graphs_dirpath
+        if self.graphs_dirpath is not None and not self.graphs_dirpath.is_dir():
+            self.graphs_dirpath.mkdir(parents=True, exist_ok=True)
         self.nodes: set[OptionName] = set()
         self.edges: dict[OptionName, list[OptionName]] = {}
 
@@ -58,6 +64,10 @@ class OptionGraph:
 
         paths: Optional[list[list[OptionName]]] = self.getPaths(end, start)
         if paths is not None:
+            if self.graphs_dirpath is None:
+                logging.warning(f"Option graphs dirpath is not set. You should set it to get a visual reference")
+            else:
+                self.saveGraph()
             raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
 
         self.edges[start].append(end)
@@ -93,6 +103,21 @@ class OptionGraph:
                 longest_path = max(longest_path, *[len(path) for path in paths])
         return longest_path
 
+    def saveGraph(self) -> None:
+        graph: AGraph = AGraph(strict=False, directed=True)
+        graph.node_attr["color"] = "lightblue2"
+        graph.node_attr["style"] = "filled"
+
+        for node_name in self.nodes:
+            graph.add_node(node_name)
+            for child in self.edges[node_name]:
+                graph.add_edge(node_name, child)
+
+        max_path_len: int = self.getLongestPathLen()
+        graph.unflatten(f"-f -l 3 -c {max_path_len}")
+        graph.layout(prog="dot")  # defaults to neato
+        graph.draw(f"{uuid4()}.png")
+
 
 Edge: TypeAlias = tuple[OptionName, OptionName]
 
@@ -103,8 +128,12 @@ ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 
 class DependenciesResolver:
     def __init__(
-        self, option_raw_dependencies: dict[OptionName, Depends], exclusive_group_rules: list[ExclusiveGroupRule]
+        self,
+        option_graphs_dirpath: Optional[Path],
+        option_raw_dependencies: dict[OptionName, Depends],
+        exclusive_group_rules: list[ExclusiveGroupRule],
     ):
+        self.option_graphs_dirpath: Optional[Path] = option_graphs_dirpath
         edge_combinations: list[list[Edge]] = self.createEdgeCombinations(option_raw_dependencies)
         self.graphs: list[OptionGraph] = []
         options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
@@ -131,11 +160,10 @@ class DependenciesResolver:
             logging.info(edge_combinations)
         return edge_combinations
 
-    @staticmethod
     def buildGraph(
-        options: list[OptionName], relations: list[Edge], exclusive_group_rules: list[ExclusiveGroupRule]
+        self, options: list[OptionName], relations: list[Edge], exclusive_group_rules: list[ExclusiveGroupRule]
     ) -> OptionGraph:
-        graph: OptionGraph = OptionGraph()
+        graph: OptionGraph = OptionGraph(self.option_graphs_dirpath)
         for option in options:
             graph.addNode(option)
         for edge in relations:
