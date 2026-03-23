@@ -87,7 +87,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "json-helpers", git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git?rev=v2.0.0" },
+    { name = "json-helpers", git = "https://github.com/3elenyi-Kaktus/json-helpers.git?rev=v2.0.1" },
     { name = "pygraphviz", specifier = "~=1.14" },
     { name = "watchdog", specifier = ">=6.0.0,<7.0.0" },
 ]
@@ -133,8 +133,8 @@ wheels = [
 
 [[package]]
 name = "json-helpers"
-version = "2.0.0"
-source = { git = "https://git.int.rnd-42.ru/ffatkullin/json-helpers.git?rev=v2.0.0#cc7603c1d1e4c8bfdf987935ddff41c43ab9a502" }
+version = "2.0.1"
+source = { git = "https://github.com/3elenyi-Kaktus/json-helpers.git?rev=v2.0.1#007cf1bdf86a7dcd2a844e2d0b0f033fe9c165fc" }
 
 [[package]]
 name = "librt"
