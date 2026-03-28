@@ -1,6 +1,4 @@
 from dataclasses import dataclass, field
-from datetime import datetime as dt
-from pathlib import Path
 from typing import Any, Callable, Optional
 
 from configurator.commons import OptionName
@@ -31,11 +29,11 @@ class Option:
     raw_value: Any = field(default=MISSING, init=False)
     value: Any = field(default=None, init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not self.required:
             self.config_inner_type = Optional[self.config_inner_type]
 
-    def __json__(self):
+    def __json__(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "config_inner_type": str(self.config_inner_type),

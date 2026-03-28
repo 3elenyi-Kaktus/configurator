@@ -1,6 +1,6 @@
 from copy import deepcopy
 import logging
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from configurator.option import Option
 
@@ -23,7 +23,7 @@ class OptionGroup:
         logging.info(f"OptionGroup: Got options: {options}")
         return options
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         logging.info(f"Mangling subclass of OptionGroup: '{cls.__name__}'")
         super().__init_subclass__()
         for attr_name in dir(cls):
@@ -37,7 +37,9 @@ class OptionGroup:
         logging.info(f"Completed subclass mangling")
 
 
-def _preprocessOptionGroup(cls: type[OptionGroup], parent: type[OptionGroup], prefix: str, real: bool):
+def _preprocessOptionGroup(
+    cls: type[OptionGroup], parent: type[OptionGroup], prefix: str, real: bool
+) -> type[OptionGroup]:
     logging.info(f"Preprocessing option group: '{cls.__name__}'")
     if not issubclass(cls, OptionGroup):
         raise RuntimeError(f"'{cls.__name__}' is not a subclass of OptionGroup")
@@ -75,10 +77,10 @@ def optionGroup(
     /,
     *,
     parent: type[OptionGroup] = OptionGroup,
-    prefix: Optional[str] = None,
+    prefix: str,
     real: bool = True,
-):
-    def wrapper(cls_):
+) -> Callable | type[OptionGroup]:
+    def wrapper(cls_: type[OptionGroup]) -> type[OptionGroup]:
         return _preprocessOptionGroup(cls_, parent, prefix, real)
 
     if cls is None:

@@ -390,16 +390,17 @@ class IConfig:
     def _getOptionValue(self, option: Option) -> Any:
         return self.options[option.name].value
 
-    def enableHotReload(self):
+    def enableHotReload(self) -> None:
         self.change_poller = ChangePoller(self.config_filepath, self._onReload)
         self.change_poller.startPolling()
 
-    def addReloadCallback(self, callback: ReloadCallback, triggered_on: Properties):
+    def addReloadCallback(self, callback: ReloadCallback, triggered_on: Properties) -> None:
         with self.reload_lock:
             self.on_reload_triggers[callback] = triggered_on
 
-    def atExit(self):
-        self.change_poller.stopPolling()
+    def atExit(self) -> None:
+        if self.change_poller is not None:
+            self.change_poller.stopPolling()
 
     @property
     def config_filepath(self) -> Path:
