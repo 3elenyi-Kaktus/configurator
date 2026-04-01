@@ -14,7 +14,7 @@ class ExclusiveGroupViolation(Exception):
     pass
 
 
-class UnfulfilledDependency(Exception):
+class DependencyViolation(Exception):
     pass
 
 

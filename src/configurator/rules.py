@@ -134,11 +134,34 @@ class DependenciesResolver:
         exclusive_group_rules: list[ExclusiveGroupRule],
     ):
         self.option_graphs_dirpath: Optional[Path] = option_graphs_dirpath
+        self.exclusive_group_rules: list[ExclusiveGroupRule] = exclusive_group_rules
+
         edge_combinations: list[list[Edge]] = self.createEdgeCombinations(option_raw_dependencies)
+        self.options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
         self.graphs: list[OptionGraph] = []
-        options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
         for combination in edge_combinations:
-            self.graphs.append(self.buildGraph(options, combination, exclusive_group_rules))
+            self.graphs.append(self.buildGraph(self.options, combination))
+
+    def resolve(self):
+        for graph in self.graphs:
+            self.checkGraph(graph, self.options, self.exclusive_group_rules)
+
+    @staticmethod
+    def checkGraph(graph: OptionGraph, options: list[OptionName], exclusive_group_rules: list[ExclusiveGroupRule]):
+        for option in options:
+            dependencies: DependencyGroup = graph.collectDependencies(option)
+            logging.info(f"Dependencies for option {option} local graph: {dependencies}")
+
+            # Ugly, but I don't know a better way to do this
+            for exclusive_group_rule in exclusive_group_rules:
+                for i, group_a in enumerate(exclusive_group_rule):
+                    for group_b in exclusive_group_rule[i + 1 :]:
+                        for option_a in group_a:
+                            for option_b in group_b:
+                                if option_a in dependencies and option_b in dependencies:
+                                    raise RuntimeError(
+                                        f"Option {option} has mixed deps: {option_a, option_b} are exclusive"
+                                    )
 
     @staticmethod
     def createEdgeCombinations(option_raw_dependencies: dict[OptionName, Depends]) -> list[list[Edge]]:
@@ -160,29 +183,12 @@ class DependenciesResolver:
             logging.info(edge_combinations)
         return edge_combinations
 
-    def buildGraph(
-        self, options: list[OptionName], relations: list[Edge], exclusive_group_rules: list[ExclusiveGroupRule]
-    ) -> OptionGraph:
+    def buildGraph(self, options: list[OptionName], relations: list[Edge]) -> OptionGraph:
         graph: OptionGraph = OptionGraph(self.option_graphs_dirpath)
         for option in options:
             graph.addNode(option)
         for edge in relations:
             graph.addEdge(*edge)
-
-        for option in options:
-            dependencies: DependencyGroup = graph.collectDependencies(option)
-            logging.info(f"Dependencies for option {option} local graph: {dependencies}")
-
-            # Ugly, but I don't know a better way to do this
-            for exclusive_group_rule in exclusive_group_rules:
-                for i, group_a in enumerate(exclusive_group_rule):
-                    for group_b in exclusive_group_rule[i + 1 :]:
-                        for option_a in group_a:
-                            for option_b in group_b:
-                                if option_a in dependencies and option_b in dependencies:
-                                    raise RuntimeError(
-                                        f"Option {option} has mixed deps: {option_a, option_b} are exclusive"
-                                    )
         return graph
 
     def collectDependencies(self, option_name: OptionName) -> list[DependencyGroup]:

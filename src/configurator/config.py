@@ -14,13 +14,13 @@ from typing_extensions import Unpack
 from configurator.arg_parser import IArgParser
 from configurator.change_poller import ChangePoller
 from configurator.errors import (
+    DependencyViolation,
     ExclusiveGroupViolation,
     InvalidConfig,
     InvalidOptionName,
     InvalidOptionValue,
     MissingOption,
     OptionNameOverlap,
-    UnfulfilledDependency,
 )
 from configurator.option import MISSING, Option, OptionName
 from configurator.option_group import OptionGroup
@@ -35,12 +35,13 @@ Properties: TypeAlias = list[property]
 class IConfig:
     def __init__(
         self,
-        arg_parser: IArgParser,
         option_groups: list[type[OptionGroup]],
+        config_fpath: Optional[Path] = None,
+        arg_parser: Optional[IArgParser] = None,
         exclusive_group_rules: Optional[list[ExclusiveGroupRule]] = None,
     ):
         self.option_groups: list[type[OptionGroup]] = option_groups
-        self.arg_parser: IArgParser = arg_parser
+        self.arg_parser: Optional[IArgParser] = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
             exclusive_group_rules if exclusive_group_rules is not None else []
         )
@@ -77,11 +78,17 @@ class IConfig:
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
 
         self.options: dict[OptionName, Option] = {}
-        self.path_to_config: Path = self.arg_parser.getConfigFilepath()
-        if not self.path_to_config.is_file():
-            raise InvalidConfig(f"Config file at '{self.path_to_config}' doesn't exist or isn't a file")
-        if self.path_to_config.suffix != ".json":
-            raise InvalidConfig(f"Specified file is not a JSON file: '{self.path_to_config}'")
+        self.config_fpath: Path
+        if config_fpath is None:
+            if self.arg_parser is None:
+                raise RuntimeError(f"Configurator needs either a path to config file or a command argument")
+            self.config_fpath = self.arg_parser.getConfigFilepath()
+        else:
+            self.config_fpath = config_fpath
+        if not self.config_fpath.is_file():
+            raise InvalidConfig(f"Config file at '{self.config_fpath}' doesn't exist or isn't a file")
+        if self.config_fpath.suffix != ".json":
+            raise InvalidConfig(f"Specified file is not a JSON file: '{self.config_fpath}'")
 
         # TODO  Simplify pattern (comment and normal lines)
         self.env_file_pattern: Pattern = re.compile(
@@ -91,10 +98,13 @@ class IConfig:
         option_dependencies: dict[OptionName, Depends] = {
             option.name: option.dependencies for option in self.registered_options.values()
         }
-        option_graphs_dirpath: Optional[Path] = self.arg_parser.getOptionGraphsDirpath()
+        option_graphs_dirpath: Optional[Path] = None
+        if self.arg_parser is not None:
+            option_graphs_dirpath = self.arg_parser.getOptionGraphsDirpath()
         self.dependencies_resolver: DependenciesResolver = DependenciesResolver(
             option_graphs_dirpath, option_dependencies, self.exclusive_group_rules
         )
+        self.dependencies_resolver.resolve()
 
     def _getProps(self) -> Properties:
         properties: Properties = []
@@ -104,9 +114,9 @@ class IConfig:
                 properties.append(attr)
         return properties
 
-    def _readConfigFile(self) -> dict[str, Any]:
+    def _readConfigFile(self, fpath: Path) -> dict[str, Any]:
         try:
-            with open(self.path_to_config, "rt") as config_file:
+            with open(fpath, "rt") as config_file:
                 file_args: dict[str, Any] = json.load(config_file)
         except OSError as exc:
             raise RuntimeError(f"Failed to read config file") from exc
@@ -209,9 +219,9 @@ class IConfig:
             option_prefix = ""
             if group._real:
                 option_prefix = f"{group._prefix_path[-1]}_"
-            for key, value in current_args[group._prefix_path[-1]].items():
+            for key, value in current_args.get(group._prefix_path[-1], {}).items():
                 current_args[option_prefix + key] = value
-            current_args.pop(group._prefix_path[-1])
+            current_args.pop(group._prefix_path[-1], None)
             logging.info(f"Config: Got {toReadableJSON(current_args)}")
             logging.info(f"Config: Flattened {toReadableJSON(args)}")
         return args
@@ -219,9 +229,9 @@ class IConfig:
     def _recreate(self) -> None:
         # Load args from config file
         try:
-            file_args: dict[str, Any] = self._readConfigFile()
+            file_args: dict[str, Any] = self._readConfigFile(self.config_fpath)
         except RuntimeError as exc:
-            raise InvalidConfig(f"Failed to load config file from '{self.path_to_config}'") from exc
+            raise InvalidConfig(f"Failed to load config file from '{self.config_fpath}'") from exc
 
         if not isinstance(file_args, dict):
             raise InvalidConfig(f"Config file must contain a JSON dictionary")
@@ -232,8 +242,14 @@ class IConfig:
         except RuntimeError as exc:
             raise InvalidConfig(f"Couldn't flatten config file") from exc
 
-        # Read all args from command line
-        cmd_args: dict[str, Any] = self.arg_parser.getArgs()
+        # User could've loaded config either via normal argument parser, then everything is set, and we
+        # can simply load its arguments. Otherwise, we have to inject config filepath into arguments manually.
+        cmd_args: dict[str, Any]
+        if self.arg_parser is not None:
+            # Read all args from command line
+            cmd_args = self.arg_parser.getArgs()
+        else:
+            cmd_args = {SystemOption.CONFIG_FILEPATH.name: str(self.config_fpath)}
 
         # Load env variables from file, if possible.
         # Filepath resolve order (until first success): CMD args, file args, then lookup in this directory.
@@ -289,9 +305,7 @@ class IConfig:
         try:
             self._resolveOptionDependencies(options)
         except BaseException as exc:
-            raise UnfulfilledDependency(
-                f"One of options was set, despite of not fulfilled dependencies for it"
-            ) from exc
+            raise DependencyViolation(f"One of options was set, despite of not fulfilled dependencies for it") from exc
 
         # We can check for missing options now.
         # `required` flag could have been mangled by previous resolves and differ from registered options list.
