@@ -67,7 +67,7 @@ class ChangePoller:
         self.callback: Callable[[], None] = callback
 
         self.stop_requested: bool = False
-        self.poller: Thread = Thread(target=self._poll)
+        self.poller: Thread = Thread(target=self._poll, daemon=True)
 
     def _poll(self) -> None:
         events_handler: EventsHandler = EventsHandler(self.filepath, self.callback)

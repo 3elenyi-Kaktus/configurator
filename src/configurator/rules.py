@@ -40,10 +40,10 @@ DependencyGroup: TypeAlias = list[OptionName]
 
 
 class OptionGraph:
-    def __init__(self, graphs_dirpath: Optional[Path]) -> None:
-        self.graphs_dirpath: Optional[Path] = graphs_dirpath
-        if self.graphs_dirpath is not None and not self.graphs_dirpath.is_dir():
-            self.graphs_dirpath.mkdir(parents=True, exist_ok=True)
+    def __init__(self, images_dirpath: Optional[Path]) -> None:
+        self.images_dirpath: Optional[Path] = images_dirpath
+        if self.images_dirpath is not None:
+            self.images_dirpath.mkdir(parents=True, exist_ok=True)
         self.nodes: set[OptionName] = set()
         self.edges: dict[OptionName, list[OptionName]] = {}
 
@@ -64,7 +64,7 @@ class OptionGraph:
 
         paths: Optional[list[list[OptionName]]] = self.getPaths(end, start)
         if paths is not None:
-            if self.graphs_dirpath is None:
+            if self.images_dirpath is None:
                 logging.warning(f"Option graphs dirpath is not set. You should set it to get a visual reference")
             else:
                 self.saveGraph()
@@ -127,27 +127,26 @@ ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 
 
 class DependenciesResolver:
-    def __init__(
+    def __init__(self, images_dirpath: Optional[Path]):
+        self.images_dirpath: Optional[Path] = images_dirpath
+        self.graphs: list[OptionGraph] = []
+
+    def resolve(
         self,
-        option_graphs_dirpath: Optional[Path],
         option_raw_dependencies: dict[OptionName, Depends],
         exclusive_group_rules: list[ExclusiveGroupRule],
-    ):
-        self.option_graphs_dirpath: Optional[Path] = option_graphs_dirpath
-        self.exclusive_group_rules: list[ExclusiveGroupRule] = exclusive_group_rules
-
+    ) -> None:
         edge_combinations: list[list[Edge]] = self.createEdgeCombinations(option_raw_dependencies)
-        self.options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
-        self.graphs: list[OptionGraph] = []
+        options: list[OptionName] = [name for name in option_raw_dependencies.keys()]
         for combination in edge_combinations:
-            self.graphs.append(self.buildGraph(self.options, combination))
-
-    def resolve(self):
+            self.graphs.append(self.buildGraph(options, combination))
         for graph in self.graphs:
-            self.checkGraph(graph, self.options, self.exclusive_group_rules)
+            self.checkGraph(graph, options, exclusive_group_rules)
 
     @staticmethod
-    def checkGraph(graph: OptionGraph, options: list[OptionName], exclusive_group_rules: list[ExclusiveGroupRule]):
+    def checkGraph(
+        graph: OptionGraph, options: list[OptionName], exclusive_group_rules: list[ExclusiveGroupRule]
+    ) -> None:
         for option in options:
             dependencies: DependencyGroup = graph.collectDependencies(option)
             logging.info(f"Dependencies for option {option} local graph: {dependencies}")
@@ -184,7 +183,7 @@ class DependenciesResolver:
         return edge_combinations
 
     def buildGraph(self, options: list[OptionName], relations: list[Edge]) -> OptionGraph:
-        graph: OptionGraph = OptionGraph(self.option_graphs_dirpath)
+        graph: OptionGraph = OptionGraph(self.images_dirpath)
         for option in options:
             graph.addNode(option)
         for edge in relations:

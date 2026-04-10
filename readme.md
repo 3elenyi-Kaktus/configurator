@@ -17,7 +17,7 @@ This configurator narrows down possible places of mistake by using option string
 
 
 # Dependencies
-The main target Python version is `Python 3.10`. Correctness of work in any other version is not guaranteed.
+The main target Python version is `3.10`. Correctness of work in any other version is not guaranteed.
 
 This library depends on a custom `json-helpers` library, which is used to print pretty JSON's in logs.
 
@@ -48,34 +48,18 @@ Meaning and contents of every file will be explained in the next sections.
 Every option is an instance with a configurable typecheckers and validators.
 
 When listing options, it's preferable to use style like:
-```python
-from configurator.option_name import IOptionName
 
-class MyOptionName(IOptionName):
-    OPTION_ONE = "option_one"
-    OTHER_OPTION = "other_option"
+```python
+from configurator.option_group import OptionGroup
+from configurator.option import Option
+
+class MyOption(OptionGroup):
+    OPTION_ONE = Option("option_one", str)
+    OTHER_OPTION = Option("other_option", int, required=False)
 ```
 String literals should be unique, since there is no way to distinguish them [TODO](#indev-features).
 
-All listed options must be registered via creating an Option objects:
-
-```python
-from configurator.option import Option
-
-Option(MyOptionName.OPTION_ONE, Optional[str], required=False)
-```
-
-These option objects must be passed to the config class for further work.
-Typically, you'll have a list of them:
-
-```python
-my_options: list[Option] = [
-    Option(MyOptionName.OPTION_ONE, Optional[str], required=False),
-    Option(MyOptionName.OTHER_OPTION, int)
-]
-```
-
-
+These option collections must be passed to the config class for further work.
 
 ### Option class
 Its instance holds all information about the option:
@@ -123,24 +107,26 @@ Refer to the [System Options](#system-options) section.
 Configurator supports command line arguments. If needed, you'll have to create a new `ArgParser` class like this:
 
 ```python
+import argparse
 from configurator.arg_parser import IArgParser
-from settings.options import OptionName
+from settings.options import MyOption
 from settings.version import __version__
 
 
 class ArgParser(IArgParser):
-    def __init__(self) -> None:
-        super().__init__(f"App description, v{__version__}")
-        self.parser.add_argument(
-            "--my-awesome-option",
-            required=False,
-            help="Some useful description",
-            dest=MyOptionName.OPTION_ONE,
-        )
-        self.parser.add_argument(...)
+  def __init__(self) -> None:
+    super().__init__(f"App description, v{__version__}")
+    self.parser.add_argument(
+      "--my-awesome-option",
+      required=False,
+      default=argparse.SUPPRESS,
+    help = "Some useful description",
+    dest = MyOption.OPTION_ONE.name,
+    )
+    self.parser.add_argument(...)
 ```
 
-You can tweak the parser options as you want, using the standard `argparse` library guidelines.
+You can tweak the parser options as you want, using the standard `argparse` library guidelines. The only requirement is adding `default=argparse.SUPPRESS` if option isn't required and has no default value.
 
 #### Important note 1
 Naming of `ArgParser` options has nothing to do with option names, defined in config.
@@ -156,21 +142,22 @@ Refer to [System Options](#system-options) section.
 The config class itself, is a simple wrapper with the getter functions. To create one, you should subclass it and write getters for your own options:
 
 ```python
+from typing import Optional
 from configurator.config import IConfig
 from settings.arg_parser import ArgParser
-from settings.options import MyOptionName, my_options as registered_options
+from settings.options import MyOption
 
 
 class Config(IConfig):
     def __init__(self):
         arg_parser: ArgParser = ArgParser()
         # if you're not using your own argument parser, use IArgParser instance instead
-        super().__init__(arg_parser, registered_options)
+        super().__init__([MyOption], arg_parser=arg_parser)
         self._recreate()
 
     @property
     def option_one(self) -> Optional[str]:
-        return self._getOptionValue(MyOptionName.OPTION_ONE)
+        return self._getOptionValue(MyOption.OPTION_ONE)
 ```
 
 #### Important note
@@ -267,8 +254,8 @@ from configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
-        (MyOptionName.PRINT_FLAG,),
-        (MyOptionName.FIBO_NUMBER,),
+        (MyOption.PRINT_FLAG,),
+        (MyOption.FIBO_NUMBER,),
     ),
 ]
 ```
@@ -282,8 +269,8 @@ from configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
-        (MyOptionName.PRINT_FLAG,),
-        (MyOptionName.FIBO_NUMBER, MyOptionName.TIMEOUT),
+        (MyOption.PRINT_FLAG,),
+        (MyOption.FIBO_NUMBER, MyOption.TIMEOUT),
     ),
 ]
 ```
@@ -306,7 +293,7 @@ For this case we can use dependency rules with `Depends` directive, when creatin
 ```python
 from configurator.rules import Depends
 
-Option(MyOptionName.TIMEOUT, float, dependencies=Depends(MyOptionName.FIBO_NUMBER)),
+Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER)),
 ```
 
 Here, if somehow `TIMEOUT` will be defined, if `FIBO_NUMBER` is not set, configurator will detect this problem.
@@ -318,11 +305,11 @@ For example, if we want to compute several Fibo numbers `FIBO_NUMBER_1` and `FIB
 from configurator.rules import Depends
 
 # We want to use timeout, if any of Fibo numbers (or both) will be computed
-Option(MyOptionName.TIMEOUT, float, dependencies=Depends(MyOptionName.FIBO_NUMBER_1) | Depends(MyOptionName.FIBO_NUMBER_2)),
+Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) | Depends(MyOption.FIBO_NUMBER_2)),
 
 # We want to use timeout only when computing both numbers at once
-Option(MyOptionName.TIMEOUT, float, dependencies=Depends(MyOptionName.FIBO_NUMBER_1) & Depends(MyOptionName.FIBO_NUMBER_2)),
-Option(MyOptionName.TIMEOUT, float, dependencies=Depends(MyOptionName.FIBO_NUMBER_1, MyOptionName.FIBO_NUMBER_2)), # Equivalent to the previous one
+Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) & Depends(MyOption.FIBO_NUMBER_2)),
+Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1, MyOption.FIBO_NUMBER_2)), # Equivalent to the previous one
 ```
 
 #### Important note
@@ -382,15 +369,102 @@ config.addReloadCallback(
 Due to design, arguments passed via command line can't be changed in runtime, since their values are immutable and preferred over other ones.
 If you plan to change arguments in runtime, consider limiting amount of arguments passed in CMD on program start as much as possible.
 
+## Option groups
+When your config grows over time, it can be hard to differentiate options for one module from other ones. The basic approach is prepending option names with respective module name:
+```json
+{
+  "fibo_option_1": 1,
+  "fibo_option_2": 2,
+  "parser_option_a": "a",
+  "parser_option_b": "b"
+}
+```
+If there are even more levels of submodules, this schema can become quite tedious to handle. There's a solution for these cases: splitting options into specialized groups. In terms of config, it would look this way:
+```json
+{
+  "fibo": {
+    "option_1": 1,
+    "option_2": 2
+  },
+  "parser": {
+    "option_a": "a",
+    "option_b": "b"
+  }
+}
+```
+This method can handle any amount of submodule levels in a more simple manner. To describe such structure in Python, you can use `@optionGroup` decorator. You can create a base class first, to bind groups to it:
+```python
+class BaseOption(OptionGroup):
+    pass
 
+@optionGroup(parent=BaseOption, prefix="fibo")
+class FiboOption(OptionGroup):
+    OPTION_1 = Option("option_1", int)
+    OPTION_2 = Option("option_2", int)
+
+@optionGroup(parent=BaseOption, prefix="parser")
+class ParserOption(OptionGroup):
+    OPTION_A = Option("option_a", str)
+    OPTION_B = Option("option_b", str)
+```
+This is not a necessary step, since if not parent specified, configurator will unwrap these groups as if they were bound to the root one.
+
+Under the hood before trying to read options from config, configurator will try to flatten it first, using combinations of prefixes and parents, acquired from option groups. Basically, this means that configurator will iteratively walk up the tree from leaves, adding the prefix to all options in current group and adding them to the parent, repeating until no groups are left. Mentioned config will be thus reduced to the equivalent of the following one:
+
+```python
+class BaseOption(OptionGroup):
+    pass
+
+class FiboOption(OptionGroup):
+    OPTION_1 = Option("fibo_option_1", int)
+    OPTION_2 = Option("fibo_option_2", int)
+
+class ParserOption(OptionGroup):
+    OPTION_A = Option("parser_option_a", str)
+    OPTION_B = Option("parser_option_b", str)
+```
+
+With this setup both beforementioned config variants will work fine: first one will be used as is, and the second one will be transformed to the first one.
+
+`@optionGroup` decorator takes up 3 arguments:
+* Parent class, mentioned before.
+* Prefix, which will be added to option names on unwrapping.
+* Flag if group is a real one.
+
+The last one shows if specified prefix should be added to the real option name. The default behavior is to add the prefix. Otherwise, configurator will use this prefix while unwrapping the config, but won't add it to the option names, forwarding them as is.
+
+# Inheritance
+If you have multiple option groups with common options, you can use inheritance alongside the `@optionGroup` decorator:
+```python
+class CommonOption(OptionGroup):
+    TIMEOUT = Option("timeout", float)
+
+@optionGroup(prefix="fibo")
+class FiboOption(CommonOption):
+    OPTION_1 = Option("option_1", int)
+
+@optionGroup(prefix="parser")
+class ParserOption(CommonOption):
+    OPTION_A = Option("option_a", str)
+```
+This is equivalent to the following:
+```python
+@optionGroup(prefix="fibo")
+class FiboOption(OptionGroup):
+    OPTION_1 = Option("option_1", int)
+    TIMEOUT = Option("timeout", float)
+
+@optionGroup(prefix="parser")
+class ParserOption(OptionGroup):
+    OPTION_A = Option("option_a", str)
+    TIMEOUT = Option("timeout", float)
+```
+Please note, that using `@optionGroup` with prefixes in these situations is crucial. If no prefix is specified, this would basically mean creating 2 options with same names, which will lead to undefined behavior.
 
 # InDev Features
-## todo `String literals should be unique, since there is no way to distinguish them.`
 ## todo add method to base argparser which automatically suppresses arguments if they were not supplied (argparse.SUPPRESS)
 ## todo imports in \_\_all__
 ## todo check for duplicate options (use sets) in dependencies and exclusive groups
-## todo rework validators
-## todo add dependency graph images
 ## todo autogenerate user config file
 ## todo do we really need Depends or these operators can be safely overloaded in optionName enum?
 ## todo do we need any other types (apart from int and str) in .env files?

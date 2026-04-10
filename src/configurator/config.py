@@ -3,8 +3,6 @@ import json
 from json import JSONDecodeError
 import logging
 from pathlib import Path
-import re
-from re import Pattern
 from threading import Lock
 from typing import Any, Callable, Optional, TypeAlias
 
@@ -13,6 +11,7 @@ from typing_extensions import Unpack
 
 from configurator.arg_parser import IArgParser
 from configurator.change_poller import ChangePoller
+from configurator.env_parser import EnvParser
 from configurator.errors import (
     DependencyViolation,
     ExclusiveGroupViolation,
@@ -40,71 +39,76 @@ class IConfig:
         arg_parser: Optional[IArgParser] = None,
         exclusive_group_rules: Optional[list[ExclusiveGroupRule]] = None,
     ):
+        if config_fpath is None and arg_parser is None:
+            raise RuntimeError(f"Configurator needs either a path to config file or a command argument parser")
+
         self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: Optional[IArgParser] = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
             exclusive_group_rules if exclusive_group_rules is not None else []
         )
-
-        # TODO Maybe there is a way to check for prefixes validity
-        # We think of option group prefixes as of syntactic sugar, so we don't enforce any checks on how user organized his options.
-        # However, this can lead to multiple options have similar names, which is a problem for us.
-        # User could've created several options with exact same name by mistake too.
-        option_parents: dict[OptionName, type[OptionGroup]] = {}
-        registered_options: list[Option] = []
-        for option_group in option_groups:
-            options: list[Option] = option_group.getOptions()
-            for option in options:
-                if option.name in option_parents:
-                    raise OptionNameOverlap(
-                        f"Option '{option.name}' from '{option_group}' is already registered in '{option_parents[option.name]}'"
-                    )
-            option_parents.update({option.name: option_group for option in options})
-            registered_options.extend(options)
-        logging.info(f"Registered options: {registered_options}")
-
-        option_mapping: dict[OptionName, Option] = {x.name: x for x in registered_options}
-        sys_option_mapping: dict[OptionName, Option] = {x.name: x for x in SystemOption.getOptions()}
-        if len(option_mapping.keys() & sys_option_mapping.keys()) > 0:
-            raise OptionNameOverlap("Provided list of registered options overlaps with system ones, consider renaming")
-
-        # This is a composition of all possible options, which will be used by this config
-        self.registered_options: dict[OptionName, Option] = option_mapping | sys_option_mapping
-
         self.reload_lock: Lock = Lock()
         self.change_poller: Optional[ChangePoller] = None
         self.properties: Properties = self._getProps()
         self.old_values: dict[property, Any] = {}
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
 
+        # Initial composition of all possible options to be used as a reference on reload
+        self.registered_options: dict[OptionName, Option] = {}
+        # Actual loaded options, based on provided config
         self.options: dict[OptionName, Option] = {}
-        self.config_fpath: Path
-        if config_fpath is None:
-            if self.arg_parser is None:
-                raise RuntimeError(f"Configurator needs either a path to config file or a command argument")
-            self.config_fpath = self.arg_parser.getConfigFilepath()
-        else:
-            self.config_fpath = config_fpath
+
+        option_graphs_dirpath: Optional[Path] = None
+        if self.arg_parser is not None:
+            option_graphs_dirpath = self.arg_parser.getOptionGraphsDirpath()
+        self.deps_resolver: DependenciesResolver = DependenciesResolver(option_graphs_dirpath)
+
+        # User-provided options and other preferences might be malformed.
+        # We can already check for some of the invariants without actually trying to load a real config.
+        # If any of them fail, then there is no use to continue anyway.
+        self._staticCheck(option_groups)
+
+        self.config_fpath: Path = config_fpath if config_fpath is not None else self.arg_parser.getConfigFilepath()
         if not self.config_fpath.is_file():
             raise InvalidConfig(f"Config file at '{self.config_fpath}' doesn't exist or isn't a file")
         if self.config_fpath.suffix != ".json":
             raise InvalidConfig(f"Specified file is not a JSON file: '{self.config_fpath}'")
 
-        # TODO  Simplify pattern (comment and normal lines)
-        self.env_file_pattern: Pattern = re.compile(
-            r"^#.*?\n$|^\n$|^(?P<name>\w+?)=(?P<value>'.+?'|\".+?\"|\d+?)(?:\s*?#.*?)?\n$"
-        )
+    def _staticCheck(self, option_groups: list[type[OptionGroup]]) -> None:
+        # To simplify things, we don't enforce any checks on how user creates options.
+        # However, this can lead to options with duplicate names, which might cause unexpected side effects.
+        self._checkForDuplicates(option_groups)
 
+        # Save all the options as a reference
+        self.registered_options = {
+            option.name: option
+            for option_group in [*option_groups, SystemOption]
+            for option in option_group.getOptions()
+        }
+
+        # Check for validity of provided option relations: dependencies and exclusive group rules
         option_dependencies: dict[OptionName, Depends] = {
             option.name: option.dependencies for option in self.registered_options.values()
         }
-        option_graphs_dirpath: Optional[Path] = None
-        if self.arg_parser is not None:
-            option_graphs_dirpath = self.arg_parser.getOptionGraphsDirpath()
-        self.dependencies_resolver: DependenciesResolver = DependenciesResolver(
-            option_graphs_dirpath, option_dependencies, self.exclusive_group_rules
-        )
-        self.dependencies_resolver.resolve()
+        self.deps_resolver.resolve(option_dependencies, self.exclusive_group_rules)
+
+    @staticmethod
+    def _checkForDuplicates(option_groups: list[type[OptionGroup]]) -> None:
+        existing_options: dict[OptionName, type[OptionGroup]] = {}
+        for option_group in option_groups:
+            options: list[Option] = option_group.getOptions()
+            for option in options:
+                if option.name in existing_options:
+                    raise OptionNameOverlap(
+                        f"Option '{option.name}' from '{option_group}' is already present in '{existing_options[option.name]}'"
+                    )
+                existing_options[option.name] = option_group
+
+        for option in SystemOption.getOptions():
+            if option.name in existing_options:
+                raise OptionNameOverlap(
+                    f"Option '{option.name}' from '{existing_options[option.name]}' overlaps with the system option name"
+                )
 
     def _getProps(self) -> Properties:
         properties: Properties = []
@@ -123,39 +127,6 @@ class IConfig:
         except JSONDecodeError as exc:
             raise RuntimeError(f"File contents aren't a valid JSON") from exc
         return file_args
-
-    def _readEnvFile(self, path: Path) -> Optional[dict[str, Any]]:
-        logging.info(f"Config: Loading .env file from '{path}'")
-        if not path.is_file():
-            logging.warning(f"Config: Path '{path}' doesn't exist or isn't a file, skipping .env file loading")
-            return None
-        if path.suffix != ".env":
-            logging.warning(f"Config: File '{path.name}' is possibly not a .env file")
-        try:
-            with open(path, "rt") as env_file:
-                lines: list[str] = env_file.readlines()
-        except OSError as exc:
-            logging.exception(exc)
-            logging.error(f"Config: Failed to read .env file from '{path}'")
-            return None
-
-        variables: dict[str, int | str] = {}
-        for line in lines:
-            if (match := self.env_file_pattern.fullmatch(line)) is None:
-                logging.error(f"Config: .env file seems to be malformed. Line: '{line}'")
-                return None
-            name: str = match.group("name")
-            if name is None:
-                continue
-            raw_value: str = match.group("value")
-            value: int | str
-            if raw_value[0] in "\"'" and raw_value[-1] in "\"'":
-                value = raw_value[1:-1]
-            else:
-                value = int(raw_value)
-            variables[name.lower()] = value
-        logging.info(f"Config: Loaded env variables successfully: {toReadableJSON(variables)}")
-        return variables
 
     def _validateOptionNames(self, args: dict[str, Any]) -> None:
         logging.debug(f"Config: Validating option names")
@@ -192,7 +163,7 @@ class IConfig:
             if option.dependencies is None:
                 continue
 
-            dependency_groups: list[DependencyGroup] = self.dependencies_resolver.collectDependencies(option_name)
+            dependency_groups: list[DependencyGroup] = self.deps_resolver.collectDependencies(option_name)
             for dependency_group in dependency_groups:
                 if all(options[dependency].raw_value is not MISSING for dependency in dependency_group):
                     # Dependency group is fulfilled, we can skip further checking of this option
@@ -257,12 +228,11 @@ class IConfig:
         for source, env_filepath in [
             ("File args", file_args.get(SystemOption.ENV_FILEPATH.name, None)),
             ("CMD args", cmd_args.get(SystemOption.ENV_FILEPATH.name)),
-            ("Configurator lib directory", Path(__file__).parent / ".env"),
         ]:
             logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
             if env_filepath is None:
                 continue
-            variables: Optional[dict[str, Any]] = self._readEnvFile(Path(env_filepath))
+            variables: Optional[dict[str, Any]] = EnvParser.parseFile(Path(env_filepath))
             if variables is not None:
                 env_vars = variables
                 break
