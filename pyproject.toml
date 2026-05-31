@@ -8,6 +8,9 @@ dependencies = [
     "watchdog~=6.0",
 ]
 
+[project.scripts]
+config-regen = "configurator.gen:generateConfigProxy"
+
 [dependency-groups]
 dev = [
     "black==25.12.0",

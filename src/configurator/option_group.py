@@ -1,4 +1,6 @@
 from copy import deepcopy
+import hashlib
+from inspect import signature
 import logging
 from typing import Any, Callable, Optional
 
@@ -10,6 +12,26 @@ class OptionGroup:
     _real: bool = True
     _prefix_path: list[str] = []
     _real_prefix_path: list[str] = []
+
+    @classmethod
+    def hash(cls) -> str:
+        options: list[Option] = cls.getOptions()
+        qualifiers: str = ""
+        for option in options:
+            qualifiers += option.name + str(option.config_inner_type) + str(signature(option.validator))
+        return hashlib.md5(qualifiers.encode()).hexdigest()
+
+    @classmethod
+    def getOptionAttrs(cls) -> list[str]:
+        attrs: list[str] = []
+        for attr_name in dir(cls):
+            value = getattr(cls, attr_name)
+            if not isinstance(value, Option):
+                continue
+            attrs.append(attr_name)
+            logging.info(f"Attr: '{attr_name}'")
+        logging.info(f"OptionGroup: Got attrs: {attrs}")
+        return attrs
 
     @classmethod
     def getOptions(cls) -> list[Option]:

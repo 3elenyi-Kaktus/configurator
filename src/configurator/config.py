@@ -1,4 +1,5 @@
 from copy import copy
+import hashlib
 import json
 from json import JSONDecodeError
 import logging
@@ -6,7 +7,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Optional, TypeAlias
 
-from json_helpers.helpers import toReadableJSON
+from json_helpers.helpers import toReadableJSON, writeJSON
 from typing_extensions import Unpack
 
 from configurator.arg_parser import IArgParser
@@ -73,6 +74,12 @@ class IConfig:
             raise InvalidConfig(f"Config file at '{self.config_fpath}' doesn't exist or isn't a file")
         if self.config_fpath.suffix != ".json":
             raise InvalidConfig(f"Specified file is not a JSON file: '{self.config_fpath}'")
+
+    @staticmethod
+    def getOptionGroupsHash(option_groups: list[type[OptionGroup]]) -> str:
+        group_hashes: str = "".join(group.hash() for group in option_groups)
+        combined_hash: str = hashlib.md5(group_hashes.encode()).hexdigest()
+        return combined_hash
 
     def _staticCheck(self, option_groups: list[type[OptionGroup]]) -> None:
         # To simplify things, we don't enforce any checks on how user creates options.
@@ -373,6 +380,21 @@ class IConfig:
 
     def _getOptionValue(self, option: Option) -> Any:
         return self.options[option.name].value
+
+    def _setOptionValue(self, option_group: type[OptionGroup], option: Option, new_value: Any) -> None:
+        logging.info(f"Config: Changing option '{option.name}' (from group: {option_group}) to: {new_value}")
+        path = option_group._prefix_path
+        config_json: dict[str, Any] = self._readConfigFile(self.config_fpath)
+
+        current_config: dict[str, Any] = config_json
+        for name in path:
+            current_config = current_config[name]
+
+        option_name_prefix: str = "_".join(option_group._real_prefix_path) + "_"
+        logging.info(f"Config: Option name prefix: '{option_name_prefix}'")
+        current_config[option.name.removeprefix(option_name_prefix)] = new_value
+        logging.info(toReadableJSON(config_json))
+        writeJSON(self.config_fpath, config_json)
 
     def enableHotReload(self) -> None:
         self.change_poller = ChangePoller(self.config_filepath, self._onReload)
