@@ -82,14 +82,9 @@ class Generator:
             for option_name in option_group.getOptionAttrs():
                 option = getattr(option_group, option_name)
                 logging.info(f"Generator: Adding option: {option}")
-                in_type: type = option.config_inner_type
-                out_type: type = option.config_inner_type
-                if option.validator is not Option.validator:
-                    sign = signature(option.validator)
-                    logging.info(f"Generator: Retrieved validator function return type: {sign.return_annotation}")
-                    if sign.return_annotation is not Signature.empty:
-                        out_type = sign.return_annotation
-                self.option_infos.append(OptionInfo(option.name, option_group_name, option_name, in_type, out_type))
+                self.option_infos.append(
+                    OptionInfo(option.name, option_group_name, option_name, option.in_type, option.type)
+                )
 
     def generate(self) -> None:
         # Load specified user module
@@ -150,10 +145,8 @@ class Generator:
         parameter_names: str = ",".join(x for x in signature(IConfig.__init__).parameters)
         result += tabulate(f"if _option_groups_hash != IConfig.getOptionGroupsHash(option_groups):\n", 2)
         result += tabulate(
-            f'logging.warning(f"ConfigProxy: Config option groups hash is different from actual option groups")\n', 3
-        )
-        result += tabulate(
-            f'logging.warning(f"ConfigProxy: This can be a sign that config is outdated and needs recreation")\n', 3
+            f'logging.warning(f"ConfigProxy: Config option groups hash is different from actual option groups. This can be a sign that config is outdated and needs recreation")\n',
+            3,
         )
         result += tabulate(f"{IConfig.__name__}.__init__({parameter_names})\n", 2)
         result += "\n".join(properties)

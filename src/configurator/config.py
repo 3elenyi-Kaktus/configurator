@@ -22,7 +22,7 @@ from configurator.errors import (
     MissingOption,
     OptionNameOverlap,
 )
-from configurator.option import MISSING, Option, OptionName
+from configurator.option import _MISSING, Option, OptionName
 from configurator.option_group import OptionGroup
 from configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
 from configurator.sys_options import SystemOption
@@ -151,7 +151,7 @@ class IConfig:
             options_set: list[set[OptionName]] = []
             for option_group in exclusive_group_rule:
                 options_set.append(
-                    set(option_name for option_name in option_group if options[option_name].raw_value is not MISSING)
+                    set(option_name for option_name in option_group if options[option_name].raw_value is not _MISSING)
                 )
                 group_defined.append(len(options_set[-1]) > 0)
             if group_defined.count(True) > 1:
@@ -172,12 +172,12 @@ class IConfig:
 
             dependency_groups: list[DependencyGroup] = self.deps_resolver.collectDependencies(option_name)
             for dependency_group in dependency_groups:
-                if all(options[dependency].raw_value is not MISSING for dependency in dependency_group):
+                if all(options[dependency].raw_value is not _MISSING for dependency in dependency_group):
                     # Dependency group is fulfilled, we can skip further checking of this option
                     break
             else:
                 # We iterated over all dependency groups, none were fulfilled
-                if options[option_name].raw_value is not MISSING:
+                if options[option_name].raw_value is not _MISSING:
                     raise RuntimeError(
                         f"Option {option_name} was set, but none of it's dependency group rules {dependency_groups} were fulfilled"
                     )
@@ -344,7 +344,7 @@ class IConfig:
     @staticmethod
     def _checkForMissing(options: dict[OptionName, Option]) -> None:
         # All required options must be set
-        set_options: set[str] = set(x for x in options.keys() if options[x].raw_value is not MISSING)
+        set_options: set[str] = set(x for x in options.keys() if options[x].raw_value is not _MISSING)
         all_options: set[str] = set(options.keys())
         required_options: set[str] = set(name for name, option in options.items() if option.required)
         if diff := required_options.difference(set_options):
@@ -357,11 +357,11 @@ class IConfig:
     @staticmethod
     def _validateOptions(options: dict[OptionName, Option]) -> None:
         for option in options.values():
-            if option.raw_value is MISSING:
+            if option.raw_value is _MISSING:
                 continue
-            if not isinstance(option.raw_value, option.config_inner_type):
+            if not isinstance(option.raw_value, option.in_type):
                 raise RuntimeError(
-                    f"Invalid option {option.name} value: {option.raw_value} of type {type(option.raw_value)} (expected {option.config_inner_type})"
+                    f"Invalid option {option.name} value: {option.raw_value} of type {type(option.raw_value)} (expected {option.in_type})"
                 )
             try:
                 option.value = option.validator(option.raw_value)

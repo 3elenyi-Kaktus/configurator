@@ -6,13 +6,13 @@ from typing import Any, Optional
 
 from json_helpers.helpers import toReadableJSON
 
-from configurator.option import MISSING, Missing
+from configurator.option import _MISSING, _Missing
 from configurator.sys_options import SystemOption
 
 
 class IArgParser:
     def __init__(self, description: str) -> None:
-        # we don't want to allow non-strict arguments parsing
+        # We don't want to allow non-strict arguments parsing
         self.parser = ArgumentParser(description=description, allow_abbrev=False)
         self.parser.add_argument(
             "-p",
@@ -50,14 +50,14 @@ class IArgParser:
     def getArg(self, name: str) -> Any:
         if not self.args:
             self.parseArgs()
-        return self.args.get(name, MISSING)
+        return self.args.get(name, _MISSING)
 
     def getConfigFilepath(self) -> Path:
         return Path(self.getArg(SystemOption.CONFIG_FILEPATH.name))
 
     def getOptionGraphsDirpath(self) -> Optional[Path]:
-        arg: str | Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
-        return Path(arg) if arg is not MISSING else None
+        arg: str | _Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
+        return Path(arg) if arg is not _MISSING else None
 
     @staticmethod
     def __json__() -> dict[str, str]:
