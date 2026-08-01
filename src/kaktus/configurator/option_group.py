@@ -4,7 +4,7 @@ from inspect import signature
 import logging
 from typing import Any, Callable, Optional
 
-from configurator.option import Option
+from kaktus.configurator.option import Option
 
 
 class OptionGroup:

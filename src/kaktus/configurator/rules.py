@@ -7,11 +7,11 @@ from uuid import uuid4
 
 from pygraphviz import AGraph
 
-from configurator.commons import OptionName
+from kaktus.configurator.commons import OptionName
 
 
 if TYPE_CHECKING:
-    from configurator.option import Option
+    from kaktus.configurator.option import Option
 
 
 class Depends:

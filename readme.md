@@ -50,8 +50,8 @@ When listing options, it's preferable to use style like:
 
 ```python
 # option.py
-from configurator.option_group import OptionGroup
-from configurator.option import Option
+from kaktus.configurator.option_group import OptionGroup
+from kaktus.configurator.option import Option
 
 
 class MyOption(OptionGroup):
@@ -105,22 +105,22 @@ Configurator supports command line arguments. If needed, you'll have to create a
 ```python
 # arg_parser.py
 import argparse
-from configurator.arg_parser import IArgParser
+from kaktus.configurator.arg_parser import IArgParser
 from settings.options import MyOption
 from settings.version import __version__
 
 
 class ArgParser(IArgParser):
-  def __init__(self) -> None:
-    super().__init__(f"App description, v{__version__}")
-    self.parser.add_argument(
-      "--my-awesome-option",
-      required=False,
-      default=argparse.SUPPRESS,
-      help="Some useful description",
-      dest=MyOption.OPTION_ONE.name,
-    )
-    self.parser.add_argument(...)
+    def __init__(self) -> None:
+        super().__init__(f"App description, v{__version__}")
+        self.parser.add_argument(
+            "--my-awesome-option",
+            required=False,
+            default=argparse.SUPPRESS,
+            help="Some useful description",
+            dest=MyOption.OPTION_ONE.name,
+        )
+        self.parser.add_argument(...)
 ```
 
 You can tweak the parser options as you want, using the standard `argparse` library guidelines. The only requirement is adding `default=argparse.SUPPRESS` if option isn't required and has no default value (either in argparser, or in the options listing).
@@ -155,10 +155,10 @@ class Config(ConfigProxy):
 ```
 
 To regenerate the config proxy, simply run the command: `config-regen option.listing.module.location:variable_name path/to/output.py`. For this to work, you have to create a variable in the options listing file, holding all the option classes as a list:
+
 ```python
 # options.py
-from configurator.option_group import OptionGroup
-
+from kaktus.configurator.option_group import OptionGroup
 
 option_groups: list[type[OptionGroup]] = [MyOption, ...]
 ```
@@ -167,7 +167,7 @@ option_groups: list[type[OptionGroup]] = [MyOption, ...]
 
 ```python
 # config.py
-from configurator.config import IConfig
+from kaktus.configurator.config import IConfig
 from settings.arg_parser import ArgParser
 from settings.options import MyOption
 
@@ -194,7 +194,7 @@ Since options are generally static, there is no use to import them one by one an
 
 ```python
 # config.py
-from configurator.config import IConfig
+from kaktus.configurator.config import IConfig
 from settings.options import option_groups
 
 
@@ -203,7 +203,6 @@ class Config(IConfig):
         ...
         IConfig.__init__(self, option_groups, ...)
         ...
-
 ```
 
 
@@ -288,8 +287,7 @@ To solve this, you can use exclusive group rules:
 
 ```python
 # option.py
-from configurator.rules import ExclusiveGroupRule
-
+from kaktus.configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
@@ -305,8 +303,7 @@ If there are multiple options to be excluded (for example, in mode 2 we can use 
 
 ```python
 # option.py
-from configurator.rules import ExclusiveGroupRule
-
+from kaktus.configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
@@ -329,11 +326,10 @@ So basically, we want to solve another problem: one option depends on another on
 
 ```python
 # options.py
-from configurator.option import Option
-from configurator.rules import Depends
+from kaktus.configurator.option import Option
+from kaktus.configurator.rules import Depends
 
-
-Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER)),
+(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER)),)
 ```
 
 Here, if somehow `TIMEOUT` is defined, while `FIBO_NUMBER` is not set, configurator will detect this problem.
@@ -342,15 +338,17 @@ You can chain `Depends` rules with `&` and `|` operators for **AND**ing and **OR
 
 ```python
 # options.py
-from configurator.option import Option
-from configurator.rules import Depends
+from kaktus.configurator.option import Option
+from kaktus.configurator.rules import Depends
 
 # We want to use timeout, if any of Fibo numbers (or both) will be computed
-Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) | Depends(MyOption.FIBO_NUMBER_2)),
+(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) | Depends(MyOption.FIBO_NUMBER_2)),)
 
 # We want to use timeout only when computing both numbers at once
-Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) & Depends(MyOption.FIBO_NUMBER_2)),
-Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1, MyOption.FIBO_NUMBER_2)), # Equivalent to the previous one
+(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) & Depends(MyOption.FIBO_NUMBER_2)),)
+(
+    Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1, MyOption.FIBO_NUMBER_2)),
+)  # Equivalent to the previous one
 ```
 
 #### Important note
@@ -385,23 +383,26 @@ For example, if you have options `my_foo` and `my_bar`:
 def foo(option) -> None:
     print(f"Option foo changed: {option}")
 
+
 def bar(option) -> None:
     print(f"Option bar changed: {option}")
+
 
 def foobar(option_foo, option_bar) -> None:
     print(f"Both foo and bar changed at once! Foo: {option_foo}, bar: {option_bar}")
 
+
 # Notice the important difference: we attach callback to an **instance**, but we list checked options from **class**!
 config.addReloadCallback(
-    foo, [Config.my_foo],
+    foo,
+    [Config.my_foo],
 )
 config.addReloadCallback(
-    bar, [Config.my_bar],
+    bar,
+    [Config.my_bar],
 )
 # In case of both foo and bar changing, all three callbacks (foo, bar and foobar) will be fired
-config.addReloadCallback(
-    foobar, [Config.my_foo, Config.my_bar]
-)
+config.addReloadCallback(foobar, [Config.my_foo, Config.my_bar])
 ```
 
 #### Important note
@@ -431,19 +432,22 @@ If there are even more levels of submodules, this schema can become quite tediou
 }
 ```
 This method can handle any amount of submodule levels in a more simple manner. To describe such structure in Python, you can use `@optionGroup` decorator. You can create a base class first, to bind groups to it:
+
 ```python
 # option.py
-from configurator.option import Option
-from configurator.option_group import optionGroup, OptionGroup
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import optionGroup, OptionGroup
 
 
 class BaseOption(OptionGroup):
     pass
 
+
 @optionGroup(parent=BaseOption, prefix="fibo")
 class FiboOption(OptionGroup):
     OPTION_1 = Option("option_1", int)
     OPTION_2 = Option("option_2", int)
+
 
 @optionGroup(parent=BaseOption, prefix="parser")
 class ParserOption(OptionGroup):
@@ -456,16 +460,18 @@ Under the hood before trying to read options from config, configurator will try 
 
 ```python
 # option.py
-from configurator.option import Option
-from configurator.option_group import OptionGroup
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import OptionGroup
 
 
 class BaseOption(OptionGroup):
     pass
 
+
 class FiboOption(OptionGroup):
     OPTION_1 = Option("fibo_option_1", int)
     OPTION_2 = Option("fibo_option_2", int)
+
 
 class ParserOption(OptionGroup):
     OPTION_A = Option("parser_option_a", str)
@@ -483,34 +489,39 @@ The last one shows if specified prefix should be added to the real option name. 
 
 # Inheritance
 If you have multiple option groups with common options, you can use inheritance alongside the `@optionGroup` decorator:
+
 ```python
 # option.py
-from configurator.option import Option
-from configurator.option_group import optionGroup, OptionGroup
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import optionGroup, OptionGroup
 
 
 class CommonOption(OptionGroup):
     TIMEOUT = Option("timeout", float)
 
+
 @optionGroup(prefix="fibo")
 class FiboOption(CommonOption):
     OPTION_1 = Option("option_1", int)
+
 
 @optionGroup(prefix="parser")
 class ParserOption(CommonOption):
     OPTION_A = Option("option_a", str)
 ```
 This is equivalent to the following:
+
 ```python
 # option.py
-from configurator.option import Option
-from configurator.option_group import optionGroup, OptionGroup
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import optionGroup, OptionGroup
 
 
 @optionGroup(prefix="fibo")
 class FiboOption(OptionGroup):
     OPTION_1 = Option("option_1", int)
     TIMEOUT = Option("timeout", float)
+
 
 @optionGroup(prefix="parser")
 class ParserOption(OptionGroup):

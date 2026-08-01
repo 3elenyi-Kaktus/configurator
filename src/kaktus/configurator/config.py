@@ -7,13 +7,13 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Optional, TypeAlias
 
-from json_helpers.helpers import toReadableJSON, writeJSON
+from kaktus.json_helpers.helpers import toReadableJSON, writeJSON
 from typing_extensions import Unpack
 
-from configurator.arg_parser import IArgParser
-from configurator.change_poller import ChangePoller
-from configurator.env_parser import EnvParser
-from configurator.errors import (
+from kaktus.configurator.arg_parser import IArgParser
+from kaktus.configurator.change_poller import ChangePoller
+from kaktus.configurator.env_parser import EnvParser
+from kaktus.configurator.errors import (
     DependencyViolation,
     ExclusiveGroupViolation,
     InvalidConfig,
@@ -22,10 +22,10 @@ from configurator.errors import (
     MissingOption,
     OptionNameOverlap,
 )
-from configurator.option import _MISSING, Option, OptionName
-from configurator.option_group import OptionGroup
-from configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
-from configurator.sys_options import SystemOption
+from kaktus.configurator.option import _MISSING, Option, OptionName
+from kaktus.configurator.option_group import OptionGroup
+from kaktus.configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
+from kaktus.configurator.sys_options import SystemOption
 
 
 ReloadCallback: TypeAlias = Callable[[Unpack[tuple[Any, ...]]], None]

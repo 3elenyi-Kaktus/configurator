@@ -4,7 +4,7 @@ import re
 from re import Pattern
 from typing import Any, Optional
 
-from json_helpers.helpers import toReadableJSON
+from kaktus.json_helpers.helpers import toReadableJSON
 
 
 _env_file_pattern: Pattern = re.compile(r"(?:|#.*?|(?P<name>\w+?)=(?P<value>'.*?'|\".*?\"|\d+?)(?: *?#.*?)?)\n")

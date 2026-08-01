@@ -4,13 +4,12 @@ from inspect import Parameter, Signature, signature
 import logging
 from typing import Any, Callable, Optional
 
-from configurator.commons import OptionName
-from configurator.rules import Depends
+from kaktus.configurator.commons import OptionName
+from kaktus.configurator.rules import Depends
 
 
 class _NotSet:
-    @staticmethod
-    def __json__() -> str:
+    def __json__(self) -> str:
         return "_NOTSET"
 
 
@@ -18,8 +17,7 @@ _NOTSET: _NotSet = _NotSet()
 
 
 class _Missing:
-    @staticmethod
-    def __json__() -> str:
+    def __json__(self) -> str:
         return "_MISSING"
 
 

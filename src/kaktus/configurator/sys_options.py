@@ -1,6 +1,6 @@
-from configurator.option import Option
-from configurator.option_group import OptionGroup
-from configurator.validators import PathTarget, pathValidator
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import OptionGroup
+from kaktus.configurator.validators import PathTarget, pathValidator
 
 
 class SystemOption(OptionGroup):

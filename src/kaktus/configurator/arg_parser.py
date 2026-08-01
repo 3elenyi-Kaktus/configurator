@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from json_helpers.helpers import toReadableJSON
+from kaktus.json_helpers.helpers import toReadableJSON
 
-from configurator.option import _MISSING, _Missing
-from configurator.sys_options import SystemOption
+from kaktus.configurator.option import _MISSING, _Missing
+from kaktus.configurator.sys_options import SystemOption
 
 
 class IArgParser:
