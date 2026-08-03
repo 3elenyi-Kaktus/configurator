@@ -1,14 +1,15 @@
+from collections.abc import Callable
 from copy import deepcopy
 import hashlib
 from inspect import signature
 import logging
-from typing import Any, Callable, Optional
+from typing import Any
 
 from kaktus.configurator.option import Option
 
 
 class OptionGroup:
-    _prefix: Optional[str] = None
+    _prefix: str | None = None
     _real: bool = True
     _prefix_path: list[str] = []
     _real_prefix_path: list[str] = []
@@ -56,7 +57,7 @@ class OptionGroup:
                 continue
             logging.info(f"Attr: '{attr_name}'")
             setattr(cls, attr_name, deepcopy(value))
-        logging.info(f"Completed subclass mangling")
+        logging.info("Completed subclass mangling")
 
 
 def _preprocessOptionGroup(
@@ -95,13 +96,13 @@ def _preprocessOptionGroup(
 
 
 def optionGroup(
-    cls: Optional[type[OptionGroup]] = None,
+    cls: type[OptionGroup] | None = None,
     /,
     *,
     parent: type[OptionGroup] = OptionGroup,
     prefix: str,
     real: bool = True,
-) -> Callable | type[OptionGroup]:
+) -> Callable[..., Any] | type[OptionGroup]:
     def wrapper(cls_: type[OptionGroup]) -> type[OptionGroup]:
         return _preprocessOptionGroup(cls_, parent, prefix, real)
 

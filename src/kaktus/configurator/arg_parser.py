@@ -2,7 +2,7 @@ import argparse
 from argparse import ArgumentParser
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from kaktus.json_helpers.helpers import toReadableJSON
 
@@ -55,7 +55,7 @@ class IArgParser:
     def getConfigFilepath(self) -> Path:
         return Path(self.getArg(SystemOption.CONFIG_FILEPATH.name))
 
-    def getOptionGraphsDirpath(self) -> Optional[Path]:
+    def getOptionGraphsDirpath(self) -> Path | None:
         arg: str | _Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
         return Path(arg) if arg is not _MISSING else None
 

@@ -1,7 +1,7 @@
+from collections.abc import Callable
 import logging
 from pathlib import Path
 from threading import Thread
-from typing import Callable
 
 from watchdog.events import (
     DirCreatedEvent,
@@ -21,7 +21,7 @@ class EventsHandler(FileSystemEventHandler):
     def __init__(self, filepath: Path, callback: Callable[[], None]) -> None:
         self.filepath: Path = filepath
         self.callback: Callable[[], None] = callback
-        super(EventsHandler, self).__init__()
+        FileSystemEventHandler.__init__(self)
 
     def dispatch(self, event: FileSystemEvent) -> None:
         self.on_any_event(event)
@@ -43,17 +43,17 @@ class EventsHandler(FileSystemEventHandler):
 
     def on_created(self, event: DirCreatedEvent | FileCreatedEvent) -> None:
         # DirCreatedEvent should be rejected in dispatch & event_filter
-        logging.info(f"EventsHandler: Triggered on file creation at targeted filepath")
+        logging.info("EventsHandler: Triggered on file creation at targeted filepath")
         self._trigger()
 
     def on_modified(self, event: DirModifiedEvent | FileModifiedEvent) -> None:
         # DirModifiedEvent should be rejected in dispatch & event_filter
-        logging.info(f"EventsHandler: Triggered on file modification at targeted filepath")
+        logging.info("EventsHandler: Triggered on file modification at targeted filepath")
         self._trigger()
 
     def on_moved(self, event: DirMovedEvent | FileMovedEvent) -> None:
         # DirMovedEvent should be rejected in dispatch & event_filter
-        logging.info(f"EventsHandler: Triggered on moving file to targeted filepath")
+        logging.info("EventsHandler: Triggered on moving file to targeted filepath")
         self._trigger()
 
     def _trigger(self) -> None:
@@ -85,20 +85,20 @@ class ChangePoller:
         try:
             while observer.is_alive():
                 if self.stop_requested:
-                    logging.info(f"ChangePoller: Stop request acknowledged")
+                    logging.info("ChangePoller: Stop request acknowledged")
                     break
                 observer.join(1)
         except BaseException as error:
             logging.exception(error)
         observer.stop()
         observer.join()
-        logging.critical(f"ChangePoller: Polling for file changes stopped")
+        logging.critical("ChangePoller: Polling for file changes stopped")
 
     def startPolling(self) -> None:
-        logging.info(f"ChangePoller: Starting up")
+        logging.info("ChangePoller: Starting up")
         self.poller.start()
 
     def stopPolling(self) -> None:
-        logging.info(f"ChangePoller: Stop requested")
+        logging.info("ChangePoller: Stop requested")
         self.stop_requested = True
         self.poller.join()

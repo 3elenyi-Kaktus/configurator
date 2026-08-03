@@ -1,8 +1,11 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import inspect
 from inspect import Parameter, Signature, signature
 import logging
-from typing import Any, Callable, Optional
+from typing import Any
 
 from kaktus.configurator.commons import OptionName
 from kaktus.configurator.rules import Depends
@@ -27,11 +30,11 @@ _MISSING: _Missing = _Missing()
 @dataclass
 class Option:
     name: OptionName
-    in_type: type = field(default=_NOTSET, kw_only=True)
-    type: type = field(default=_NOTSET, kw_only=True)
+    in_type: type | _NotSet = field(default=_NOTSET, kw_only=True)
+    type: type | _NotSet = field(default=_NOTSET, kw_only=True)
     validator: Callable[[Any], Any] = field(default=lambda x: x, kw_only=True)
     required: bool = field(default=True, kw_only=True)
-    dependencies: Optional[Depends] = field(default=None, kw_only=True)
+    dependencies: Depends | None = field(default=None, kw_only=True)
     default: Any = field(default=_MISSING, kw_only=True)
 
     raw_value: Any = field(default=_MISSING, init=False)
@@ -45,7 +48,7 @@ class Option:
         # Otherwise, check if it's needed to infer types from validator.
         if self.validator is Option.validator:
             if self.type is _NOTSET:
-                raise RuntimeError(f"Option type parameter is not set (either set it, or provide a validator)")
+                raise RuntimeError("Option type parameter is not set (either set it, or provide a validator)")
             if self.in_type != self.type and self.in_type is not _NOTSET:
                 raise RuntimeError(
                     f"Input and option types mismatch ({self.in_type} != {self.type}) (pass-through implementation can't have different types)"
@@ -60,10 +63,10 @@ class Option:
             if self.in_type is _NOTSET:
                 parameters: list[Parameter] = list(sign.parameters.values())
                 if len(parameters) == 0:
-                    raise RuntimeError(f"Validator callable must have at least one parameter")
+                    raise RuntimeError("Validator callable must have at least one parameter")
                 parameter: Parameter = parameters[0]
                 if parameter.annotation is Parameter.empty:
-                    raise RuntimeError(f"Can't infer type for input value, validator callable parameter isn't typed")
+                    raise RuntimeError("Can't infer type for input value, validator callable parameter isn't typed")
                 self.in_type = parameter.annotation
             if self.type is _NOTSET:
                 if sign.return_annotation is not Signature.empty:
@@ -71,9 +74,7 @@ class Option:
                 elif inspect.isclass(self.validator):
                     self.type = self.validator
                 else:
-                    raise RuntimeError(
-                        f"Can't infer type for option value, validator callable return value isn't typed"
-                    )
+                    raise RuntimeError("Can't infer type for option value, validator callable return value isn't typed")
 
     def __json__(self) -> dict[str, Any]:
         return {

@@ -2,37 +2,37 @@ import logging
 from pathlib import Path
 import re
 from re import Pattern
-from typing import Any, Optional
+from typing import Any
 
 from kaktus.json_helpers.helpers import toReadableJSON
 
 
-_env_file_pattern: Pattern = re.compile(r"(?:|#.*?|(?P<name>\w+?)=(?P<value>'.*?'|\".*?\"|\d+?)(?: *?#.*?)?)\n")
+_env_file_pattern: Pattern[str] = re.compile(r"(?:|#.*?|(?P<name>\w+?)=(?P<value>'.*?'|\".*?\"|\d+?)(?: *?#.*?)?)\n")
 
 
 class EnvParser:
     @staticmethod
-    def _readFile(path: Path) -> Optional[list[str]]:
+    def _readFile(path: Path) -> list[str] | None:
         logging.info(f"EnvParser: Loading .env file from '{path}'")
         if not path.is_file():
-            logging.warning(f"EnvParser: Path doesn't exist or isn't a file")
+            logging.warning("EnvParser: Path doesn't exist or isn't a file")
             return None
         if path.name != ".env" and path.suffix != ".env":
-            logging.warning(f"EnvParser: File is possibly not a .env file")
+            logging.warning("EnvParser: File is possibly not a .env file")
         try:
-            with open(path, "rt") as env_file:
+            with open(path) as env_file:
                 lines: list[str] = env_file.readlines()
         except OSError as exc:
             logging.exception(exc)
-            logging.error(f"EnvParser: Failed to read the file")
+            logging.error("EnvParser: Failed to read the file")
             return None
         return lines
 
     @staticmethod
-    def parseFile(path: Path) -> Optional[dict[str, Any]]:
-        lines: Optional[list[str]] = EnvParser._readFile(path)
+    def parseFile(path: Path) -> dict[str, Any] | None:
+        lines: list[str] | None = EnvParser._readFile(path)
         if lines is None:
-            logging.error(f"EnvParser: Skipping parsing .env file")
+            logging.error("EnvParser: Skipping parsing .env file")
             return None
 
         variables: dict[str, int | str] = {}

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from copy import copy
 import hashlib
 import json
@@ -5,13 +6,13 @@ from json import JSONDecodeError
 import logging
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Optional, TypeAlias
+from typing import Any, TypeAlias
 
 from kaktus.json_helpers.helpers import toReadableJSON, writeJSON
-from typing_extensions import Unpack
 
 from kaktus.configurator.arg_parser import IArgParser
 from kaktus.configurator.change_poller import ChangePoller
+from kaktus.configurator.commons import OptionName
 from kaktus.configurator.env_parser import EnvParser
 from kaktus.configurator.errors import (
     DependencyViolation,
@@ -22,13 +23,13 @@ from kaktus.configurator.errors import (
     MissingOption,
     OptionNameOverlap,
 )
-from kaktus.configurator.option import _MISSING, Option, OptionName
+from kaktus.configurator.option import _MISSING, Option
 from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
 from kaktus.configurator.sys_options import SystemOption
 
 
-ReloadCallback: TypeAlias = Callable[[Unpack[tuple[Any, ...]]], None]
+ReloadCallback: TypeAlias = Callable[..., None]
 Properties: TypeAlias = list[property]
 
 
@@ -36,20 +37,20 @@ class IConfig:
     def __init__(
         self,
         option_groups: list[type[OptionGroup]],
-        config_fpath: Optional[Path] = None,
-        arg_parser: Optional[IArgParser] = None,
-        exclusive_group_rules: Optional[list[ExclusiveGroupRule]] = None,
+        config_fpath: Path | None = None,
+        arg_parser: IArgParser | None = None,
+        exclusive_group_rules: list[ExclusiveGroupRule] | None = None,
     ):
         if config_fpath is None and arg_parser is None:
-            raise RuntimeError(f"Configurator needs either a path to config file or a command argument parser")
+            raise RuntimeError("Configurator needs either a path to config file or a command argument parser")
 
         self.option_groups: list[type[OptionGroup]] = option_groups
-        self.arg_parser: Optional[IArgParser] = arg_parser
+        self.arg_parser: IArgParser | None = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
             exclusive_group_rules if exclusive_group_rules is not None else []
         )
         self.reload_lock: Lock = Lock()
-        self.change_poller: Optional[ChangePoller] = None
+        self.change_poller: ChangePoller | None = None
         self.properties: Properties = self._getProps()
         self.old_values: dict[property, Any] = {}
         self.on_reload_triggers: dict[ReloadCallback, Properties] = {}
@@ -59,7 +60,7 @@ class IConfig:
         # Actual loaded options, based on provided config
         self.options: dict[OptionName, Option] = {}
 
-        option_graphs_dirpath: Optional[Path] = None
+        option_graphs_dirpath: Path | None = None
         if self.arg_parser is not None:
             option_graphs_dirpath = self.arg_parser.getOptionGraphsDirpath()
         self.deps_resolver: DependenciesResolver = DependenciesResolver(option_graphs_dirpath)
@@ -94,7 +95,7 @@ class IConfig:
         }
 
         # Check for validity of provided option relations: dependencies and exclusive group rules
-        option_dependencies: dict[OptionName, Depends] = {
+        option_dependencies: dict[OptionName, Depends | None] = {
             option.name: option.dependencies for option in self.registered_options.values()
         }
         self.deps_resolver.resolve(option_dependencies, self.exclusive_group_rules)
@@ -127,16 +128,16 @@ class IConfig:
 
     def _readConfigFile(self, fpath: Path) -> dict[str, Any]:
         try:
-            with open(fpath, "rt") as config_file:
+            with open(fpath) as config_file:
                 file_args: dict[str, Any] = json.load(config_file)
         except OSError as exc:
-            raise RuntimeError(f"Failed to read config file") from exc
+            raise RuntimeError("Failed to read config file") from exc
         except JSONDecodeError as exc:
-            raise RuntimeError(f"File contents aren't a valid JSON") from exc
+            raise RuntimeError("File contents aren't a valid JSON") from exc
         return file_args
 
     def _validateOptionNames(self, args: dict[str, Any]) -> None:
-        logging.debug(f"Config: Validating option names")
+        logging.debug("Config: Validating option names")
         # All options must be from registered ones
         allowed_options: set[str] = set(self.registered_options.keys())
         logging.debug(f"Config: Allowed options: '{allowed_options}'")
@@ -156,7 +157,7 @@ class IConfig:
                 group_defined.append(len(options_set[-1]) > 0)
             if group_defined.count(True) > 1:
                 raise RuntimeError(f"Options {[x for x in options_set if len(x) > 0]} are exclusive")
-            for option_group, group_enabled in zip(exclusive_group_rule, group_defined):
+            for option_group, group_enabled in zip(exclusive_group_rule, group_defined, strict=True):
                 if group_enabled:
                     continue
                 logging.info(
@@ -212,13 +213,13 @@ class IConfig:
             raise InvalidConfig(f"Failed to load config file from '{self.config_fpath}'") from exc
 
         if not isinstance(file_args, dict):
-            raise InvalidConfig(f"Config file must contain a JSON dictionary")
+            raise InvalidConfig("Config file must contain a JSON dictionary")
 
         # Flatten config dictionary
         try:
             file_args = self._flattenArguments(file_args)
         except RuntimeError as exc:
-            raise InvalidConfig(f"Couldn't flatten config file") from exc
+            raise InvalidConfig("Couldn't flatten config file") from exc
 
         # User could've loaded config either via normal argument parser, then everything is set, and we
         # can simply load its arguments. Otherwise, we have to inject config filepath into arguments manually.
@@ -239,7 +240,7 @@ class IConfig:
             logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
             if env_filepath is None:
                 continue
-            variables: Optional[dict[str, Any]] = EnvParser.parseFile(Path(env_filepath))
+            variables: dict[str, Any] | None = EnvParser.parseFile(Path(env_filepath))
             if variables is not None:
                 env_vars = variables
                 break
@@ -254,7 +255,7 @@ class IConfig:
         try:
             self._validateOptionNames(args)
         except BaseException as exc:
-            raise InvalidOptionName(f"Failed to validate option names") from exc
+            raise InvalidOptionName("Failed to validate option names") from exc
 
         # At this point we performed all possible checks on arguments as is.
         # We can move their values to the corresponding options.
@@ -273,7 +274,7 @@ class IConfig:
         try:
             self._resolveExclusiveGroups(options)
         except BaseException as exc:
-            raise ExclusiveGroupViolation(f"One of exclusive options rules was violated") from exc
+            raise ExclusiveGroupViolation("One of exclusive options rules was violated") from exc
 
         # We resolved which exclusive group rules had to be applied, now we must check the option dependencies.
         # If not all dependencies for option are satisfied, then we have to do 2 things:
@@ -282,30 +283,30 @@ class IConfig:
         try:
             self._resolveOptionDependencies(options)
         except BaseException as exc:
-            raise DependencyViolation(f"One of options was set, despite of not fulfilled dependencies for it") from exc
+            raise DependencyViolation("One of options was set, despite of not fulfilled dependencies for it") from exc
 
         # We can check for missing options now.
         # `required` flag could have been mangled by previous resolves and differ from registered options list.
         try:
             self._checkForMissing(options)
         except BaseException as exc:
-            raise MissingOption(f"Some of required options were not set") from exc
+            raise MissingOption("Some of required options were not set") from exc
 
         # Nothing seems off about passed options (at least on config logic level).
         # We can safely run userspace argument checks.
         try:
             self._validateOptions(options)
         except BaseException as exc:
-            raise InvalidOptionValue(f"Failed to validate config options") from exc
+            raise InvalidOptionValue("Failed to validate config options") from exc
 
         # We successfully validated all options without errors and can save them
         logging.info(f"Config: Converted to options: {toReadableJSON(options)}")
         self.options = options
 
     def _onReload(self) -> None:
-        logging.info(f"Config: Reload requested")
+        logging.info("Config: Reload requested")
         with self.reload_lock:
-            logging.info(f"Config: Reload lock acquired, starting reload")
+            logging.info("Config: Reload lock acquired, starting reload")
             # Load all current values of properties
             for prop in self.properties:
                 self.old_values[prop] = prop.fget(self)
@@ -314,7 +315,7 @@ class IConfig:
                 self._recreate()
             except BaseException as exc:
                 logging.exception(exc)
-                logging.error(f"Config: Reload failed, keeping old configuration")
+                logging.error("Config: Reload failed, keeping old configuration")
                 return
 
             # Reload necessary classes based on changed props and registered reload callbacks
@@ -323,7 +324,7 @@ class IConfig:
                     logging.info(
                         f"Config: Property {prop.fget.__name__} was changed: {self.old_values[prop]} -> {prop.fget(self)}"
                     )
-            logging.info(f"Config: Reloaded config successfully, propagating changes to dependants")
+            logging.info("Config: Reloaded config successfully, propagating changes to dependants")
             for callback, triggered_on in self.on_reload_triggers.items():
                 args: list[Any] = []
                 needs_reloading: bool = False
@@ -339,7 +340,7 @@ class IConfig:
                 except BaseException as exc:
                     logging.exception(exc)
                     logging.error(f"Config: Reloading trigger {callback} failed")
-            logging.info(f"Config: Reload completed")
+            logging.info("Config: Reload completed")
 
     @staticmethod
     def _checkForMissing(options: dict[OptionName, Option]) -> None:
@@ -413,9 +414,9 @@ class IConfig:
         return self._getOptionValue(SystemOption.CONFIG_FILEPATH)
 
     @property
-    def env_filepath(self) -> Optional[Path]:
+    def env_filepath(self) -> Path | None:
         return self._getOptionValue(SystemOption.ENV_FILEPATH)
 
     @property
-    def option_graphs_dirpath(self) -> Optional[Path]:
+    def option_graphs_dirpath(self) -> Path | None:
         return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)

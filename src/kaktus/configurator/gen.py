@@ -11,6 +11,8 @@ from re import Pattern
 import shlex
 import subprocess
 import sys
+import types
+from typing import Any
 
 from ruff import find_ruff_bin
 
@@ -85,15 +87,21 @@ class Generator:
         self.output: Path = output
         self.command: str = command
 
-        self.imports: set[tuple[str, str]] = set()
-        self.imported_type_pattern: Pattern = re.compile(r"(?P<import_source>[\w.]+)\.(?P<object>\w+)")
+        self.complex_imports: set[tuple[str, str]] = set()
+        self.imported_type_pattern: Pattern[str] = re.compile(r"(?P<import_source>[\w.]+)\.(?P<object>\w+)")
 
         self.option_infos: list[OptionInfo] = []
 
-    def simplifyType(self, input_type: type) -> str:
+    def simplifyType(self, input_type: Any) -> str:
         logging.info(f"Generator: Simplifying type '{input_type}'")
         type_string: str
-        if hasattr(input_type, "__origin__"):
+
+        # Quite a shaky branching here (I'm sure I missed some cases), might need some additional checking
+        if input_type is None or input_type is types.NoneType:
+            return "None"
+        if isinstance(input_type, types.UnionType) or hasattr(
+            input_type, "__origin__"
+        ):  # If type is a Union or Generic/special form
             type_string = str(input_type)
         else:
             type_string = input_type.__name__
@@ -103,7 +111,7 @@ class Generator:
             matches: list[tuple[str, str]] = self.imported_type_pattern.findall(type_string)
             for match in matches:
                 logging.info(f"Generator: Adding '{match[0]}.{match[1]}' to type imports")
-                self.imports.add(match)
+                self.complex_imports.add(match)
             type_string = self.imported_type_pattern.sub(r"\2", type_string)
             logging.info(f"Generator: Simplified to '{type_string}'")
         return type_string
@@ -112,7 +120,7 @@ class Generator:
         config_type_string: str = self.simplifyType(option_info.config_type)
         runtime_type_string: str = self.simplifyType(option_info.runtime_type)
         res = [
-            f"@property\n",
+            "@property\n",
             f"def {option_info.name}(self) -> {runtime_type_string}:\n",
             f"    return self._getOptionValue({option_info.group_name}.{option_info.config_name})\n\n",
             f"@{option_info.name}.setter\n",
@@ -158,12 +166,12 @@ class Generator:
             "".join(tabulate(line, 1) for line in self.createProperty(option_info)) for option_info in self.option_infos
         ]
 
-        logging.info(f"Generator: Creating __init__ signature for ConfigProxy")
+        logging.info("Generator: Creating __init__ signature for ConfigProxy")
         init_params: str = str(inspect.signature(IConfig.__init__))
         matches: list[tuple[str, str]] = self.imported_type_pattern.findall(init_params)
         for match in matches:
             logging.info(f"Generator: Adding '{match[0]}.{match[1]}' to type imports")
-            self.imports.add(match)
+            self.complex_imports.add(match)
         init_params = self.imported_type_pattern.sub(r"\2", init_params)
         logging.info(f"Generator: Simplified to '{init_params}'")
 
@@ -178,8 +186,8 @@ class Generator:
             f"# ----\n\n"
         )
 
-        type_imports: str = "\n".join(f"from {x[0]} import {x[1]}" for x in self.imports)
-        system_imports: str = f"from kaktus.configurator.config import IConfig\nimport logging\n"
+        type_imports: str = "\n".join(f"from {x[0]} import {x[1]}" for x in self.complex_imports)
+        system_imports: str = "from kaktus.configurator.config import IConfig\nimport logging\n"
         option_groups_imports: str = (
             f"from {self.module_name} import {', '.join(option_group.__name__ for option_group in option_groups)}\n"
         )
@@ -189,9 +197,9 @@ class Generator:
         result += f"\n\nclass ConfigProxy({IConfig.__name__}):\n"
         result += tabulate(f"def __init__{init_params} -> None:\n", 1)
         parameter_names: str = ",".join(x for x in signature(IConfig.__init__).parameters)
-        result += tabulate(f"if _option_groups_hash != IConfig.getOptionGroupsHash(option_groups):\n", 2)
+        result += tabulate("if _option_groups_hash != IConfig.getOptionGroupsHash(option_groups):\n", 2)
         result += tabulate(
-            f'logging.warning(f"ConfigProxy: Config option groups hash is different from actual option groups. This can be a sign that config is outdated and needs recreation")\n',
+            'logging.warning("ConfigProxy: Config option groups hash is different from actual option groups. This can be a sign that config is outdated and needs recreation")\n',
             3,
         )
         result += tabulate(f"{IConfig.__name__}.__init__({parameter_names})\n", 2)
@@ -200,7 +208,7 @@ class Generator:
         logging.info("Generator: Formatting generated code with ruff")
         result = formatGeneratedCode(result, self.output.name)
 
-        with open(self.output, "wt") as f:
+        with open(self.output, "w") as f:
             f.write(result)
 
 

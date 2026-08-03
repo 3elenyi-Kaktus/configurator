@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 from uuid import uuid4
 
 from pygraphviz import AGraph
@@ -18,7 +18,7 @@ class Depends:
     def __init__(self, *args: Option):
         self.groups: list[tuple[OptionName, ...]] = [tuple(option.name for option in args)]
 
-    def __and__(self, other: "Depends") -> "Depends":
+    def __and__(self, other: Depends) -> Depends:
         result: list[tuple[OptionName, ...]] = []
         for dependency_group in self.groups:
             for other_dependency_group in other.groups:
@@ -26,7 +26,7 @@ class Depends:
         self.groups = result
         return self
 
-    def __or__(self, other: "Depends") -> "Depends":
+    def __or__(self, other: Depends) -> Depends:
         self.groups.extend(other.groups)
         return self
 
@@ -40,14 +40,14 @@ DependencyGroup: TypeAlias = list[OptionName]
 
 
 class OptionGraph:
-    def __init__(self, images_dirpath: Optional[Path]) -> None:
-        self.images_dirpath: Optional[Path] = images_dirpath
+    def __init__(self, images_dirpath: Path | None) -> None:
+        self.images_dirpath: Path | None = images_dirpath
         if self.images_dirpath is not None:
             self.images_dirpath.mkdir(parents=True, exist_ok=True)
         self.nodes: set[OptionName] = set()
         self.edges: dict[OptionName, list[OptionName]] = {}
 
-    def addNode(self, name: OptionName, children: Optional[list[OptionName]] = None) -> None:
+    def addNode(self, name: OptionName, children: list[OptionName] | None = None) -> None:
         if name in self.nodes:
             raise RuntimeError(f"Node {name} already exists")
         self.nodes.add(name)
@@ -62,17 +62,17 @@ class OptionGraph:
         if end not in self.nodes:
             raise RuntimeError(f"End node '{end}' doesn't exist")
 
-        paths: Optional[list[list[OptionName]]] = self.getPaths(end, start)
+        paths: list[list[OptionName]] | None = self.getPaths(end, start)
         if paths is not None:
             if self.images_dirpath is None:
-                logging.warning(f"Option graphs dirpath is not set. You should set it to get a visual reference")
+                logging.warning("Option graphs dirpath is not set. You should set it to get a visual reference")
             else:
                 self.saveGraph()
             raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
 
         self.edges[start].append(end)
 
-    def getPaths(self, start: OptionName, end: OptionName) -> Optional[list[list[OptionName]]]:
+    def getPaths(self, start: OptionName, end: OptionName) -> list[list[OptionName]] | None:
         if start == end:
             return [[end]]
         if not self.edges[start]:
@@ -97,7 +97,7 @@ class OptionGraph:
         longest_path: int = 0
         for start_node in self.nodes:
             for end_node in self.nodes:
-                paths: Optional[list[list[OptionName]]] = self.getPaths(start_node, end_node)
+                paths: list[list[OptionName]] | None = self.getPaths(start_node, end_node)
                 if paths is None:
                     continue
                 longest_path = max(longest_path, *[len(path) for path in paths])
@@ -127,13 +127,13 @@ ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 
 
 class DependenciesResolver:
-    def __init__(self, images_dirpath: Optional[Path]):
-        self.images_dirpath: Optional[Path] = images_dirpath
+    def __init__(self, images_dirpath: Path | None):
+        self.images_dirpath: Path | None = images_dirpath
         self.graphs: list[OptionGraph] = []
 
     def resolve(
         self,
-        option_raw_dependencies: dict[OptionName, Depends],
+        option_raw_dependencies: dict[OptionName, Depends | None],
         exclusive_group_rules: list[ExclusiveGroupRule],
     ) -> None:
         edge_combinations: list[list[Edge]] = self.createEdgeCombinations(option_raw_dependencies)
@@ -163,16 +163,16 @@ class DependenciesResolver:
                                     )
 
     @staticmethod
-    def createEdgeCombinations(option_raw_dependencies: dict[OptionName, Depends]) -> list[list[Edge]]:
+    def createEdgeCombinations(option_raw_dependencies: dict[OptionName, Depends | None]) -> list[list[Edge]]:
         edge_combinations: list[list[Edge]] = [[]]
         for option_name, raw_dependencies in option_raw_dependencies.items():
             logging.info(f"Adding option {option_name}")
             if raw_dependencies is None:
-                logging.info(f"No deps")
+                logging.info("No deps")
                 continue
             logging.info(f"Dependencies: {raw_dependencies.groups}")
             res = []
-            logging.info(f"Many group")
+            logging.info("Many group")
             for group in raw_dependencies.groups:
                 current = []
                 for combination in edge_combinations:
@@ -195,5 +195,5 @@ class DependenciesResolver:
         for graph in self.graphs:
             dependencies.append(graph.collectDependencies(option_name))
         logging.info(f"Deps for {option_name}: {dependencies}")
-        logging.info(f"\n\n")
+        logging.info("\n\n")
         return dependencies

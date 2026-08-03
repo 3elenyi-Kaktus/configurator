@@ -1,7 +1,7 @@
+from collections.abc import Callable
 from datetime import datetime as dt
 from enum import IntEnum
 from pathlib import Path
-from typing import Callable, Optional
 
 
 class PathTarget(IntEnum):
@@ -10,13 +10,13 @@ class PathTarget(IntEnum):
 
 
 def pathValidator(
-    *, optional: bool = False, missing_ok: bool = False, target: Optional[PathTarget] = None
-) -> Callable[[Optional[str]], Optional[Path]]:
-    def validate(in_path: Optional[str]) -> Optional[Path]:
+    *, optional: bool = False, missing_ok: bool = False, target: PathTarget | None = None
+) -> Callable[[str | None], Path | None]:
+    def validate(in_path: str | None) -> Path | None:
         # If path target is not None, then existence check is implied in the pathlib methods.
         # This might conflict with intentional existence check skip.
         if missing_ok and target is not None:
-            raise RuntimeError(f"Using path target and skipping existence check are mutually exclusive options")
+            raise RuntimeError("Using path target and skipping existence check are mutually exclusive options")
         if in_path is None:
             if optional:
                 return None
@@ -41,8 +41,8 @@ def pathValidator(
     return validate
 
 
-def datetimeValidator(dt_format: str, *, optional: bool = False) -> Callable[[Optional[str]], Optional[dt]]:
-    def validate(ts: Optional[str]) -> Optional[dt]:
+def datetimeValidator(dt_format: str, *, optional: bool = False) -> Callable[[str | None], dt | None]:
+    def validate(ts: str | None) -> dt | None:
         if ts is None:
             if optional:
                 return None

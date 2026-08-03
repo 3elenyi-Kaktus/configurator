@@ -1,8 +1,9 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 import logging
 import sys
-from typing import Any, Callable
+from typing import Any
 
 
 class NotSet:
@@ -61,7 +62,7 @@ if DEBUG:
             def setAttr(field_name, field_type, default_value, inner_type, validator, self, value):
                 print(f"Set attr '{field_name}' to: {value} in {self}")
                 if value == type(self).__dict__[field_name]:
-                    logging.info(f"Class is initialised, skip setting property to itself")
+                    logging.info("Class is initialised, skip setting property to itself")
                     return
                 # if passed value is of proper type, which is different from requested inner one, then consider value to be already correct
                 current_value = getattr(self, internalField(field_name))
@@ -90,7 +91,7 @@ if DEBUG:
             )
             setattr(cls, name, name_property)
 
-        logging.info(f"After mangling class")
+        logging.info("After mangling class")
         logging.info(f"Annotations: {cls.__annotations__}")
         logging.info(f"Dict: {cls.__dict__}")
         return cls
