@@ -7,7 +7,7 @@ class SystemOption(OptionGroup):
     CONFIG_FILEPATH = Option(
         "config_filepath",
         in_type=str,
-        type=str,
+        rtype=str,
         validator=pathValidator(target=PathTarget.FILE),
     )
     ENV_FILEPATH = Option(

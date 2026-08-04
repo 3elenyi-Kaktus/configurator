@@ -22,6 +22,7 @@ dependencies = [
     "kaktus-json-helpers>=4.0.2",
     "pygraphviz>=2.0.1",
     "ruff>=0.16.0",
+    "typing-extensions>=4.15.0",
     "watchdog>=6.0.0",
 ]
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 import inspect
 from inspect import Parameter, Signature, signature
 import logging
-from typing import Any
+from types import GenericAlias, UnionType
+from typing import Any, TypeAlias
 
 from kaktus.configurator.commons import OptionName
 from kaktus.configurator.rules import Depends
@@ -26,61 +26,102 @@ class _Missing:
 
 _MISSING: _Missing = _Missing()
 
+OptionType: TypeAlias = type | UnionType | GenericAlias
+Validator: TypeAlias = Callable[[Any], Any]
 
-@dataclass
+
 class Option:
-    name: OptionName
-    in_type: type | _NotSet = field(default=_NOTSET, kw_only=True)
-    type: type | _NotSet = field(default=_NOTSET, kw_only=True)
-    validator: Callable[[Any], Any] = field(default=lambda x: x, kw_only=True)
-    required: bool = field(default=True, kw_only=True)
-    dependencies: Depends | None = field(default=None, kw_only=True)
-    default: Any = field(default=_MISSING, kw_only=True)
+    def __init__(
+        self,
+        name: OptionName,
+        *,
+        in_type: OptionType | None = None,
+        rtype: OptionType | None = None,
+        validator: Validator | None = None,
+        required: bool = True,
+        dependencies: Depends | None = None,
+        default: Any = _NOTSET,
+    ):
+        self.name: OptionName = name
+        self.validator: Validator = (lambda x: x) if validator is None else validator
+        self.required: bool = required
+        self.dependencies: Depends | None = dependencies
+        self.default: Any = default
 
-    raw_value: Any = field(default=_MISSING, init=False)
-    value: Any = field(default=None, init=False)
+        self.raw_value: Any = _MISSING
+        self.value: Any = None
 
-    def __post_init__(self) -> None:
-        if self.default is not _MISSING:
+        if self.default is not _NOTSET:
             self.raw_value = self.default
 
-        # If option is a simple one (pass-through without validator), copy the value type into the input type if needed.
-        # Otherwise, check if it's needed to infer types from validator.
-        if self.validator is Option.validator:
-            if self.type is _NOTSET:
-                raise RuntimeError("Option type parameter is not set (either set it, or provide a validator)")
-            if self.in_type != self.type and self.in_type is not _NOTSET:
-                raise RuntimeError(
-                    f"Input and option types mismatch ({self.in_type} != {self.type}) (pass-through implementation can't have different types)"
-                )
-            self.in_type = self.type
-        else:
-            if self.in_type is not _NOTSET and self.type is not _NOTSET:
-                return
+        resolved_types: tuple[OptionType, OptionType] = self.__resolveOptionTypes(in_type, rtype, validator)
+        self.in_type: OptionType = resolved_types[0]
+        self.rtype: OptionType = resolved_types[1]
 
-            sign: Signature = signature(self.validator)
-            logging.info(f"Option: Retrieved validator function return type: {sign.return_annotation}")
-            if self.in_type is _NOTSET:
-                parameters: list[Parameter] = list(sign.parameters.values())
-                if len(parameters) == 0:
-                    raise RuntimeError("Validator callable must have at least one parameter")
-                parameter: Parameter = parameters[0]
-                if parameter.annotation is Parameter.empty:
-                    raise RuntimeError("Can't infer type for input value, validator callable parameter isn't typed")
-                self.in_type = parameter.annotation
-            if self.type is _NOTSET:
-                if sign.return_annotation is not Signature.empty:
-                    self.type = sign.return_annotation
-                elif inspect.isclass(self.validator):
-                    self.type = self.validator
-                else:
-                    raise RuntimeError("Can't infer type for option value, validator callable return value isn't typed")
+    def __resolveOptionTypes(
+        self, in_type: OptionType | None, rtype: OptionType | None, validator: Validator | None
+    ) -> tuple[OptionType, OptionType]:
+        # We need to infer option input/option types for later typechecking.
+        # If option has no custom validator (a default pass-through one), we can infer types only from the ones provided by user.
+        if validator is None:
+            if rtype is None:
+                raise RuntimeError("Option 'rtype' parameter is unset (set it or provide a typed validator)")
+            if in_type is not None and in_type != rtype:
+                raise RuntimeError(
+                    f"Input and option types in option {self.name} mismatch (input -> '{in_type}' != '{rtype}' <- option) (change input/option types or provide a custom validator)"
+                )
+            return rtype, rtype
+
+        sign: Signature = signature(self.validator)
+        input_parameters: list[Parameter] = list(sign.parameters.values())
+        if len(input_parameters) == 0:
+            raise RuntimeError(f"Validator callable must have at least one parameter in option '{self.name}'")
+        input_annotation: Any = input_parameters[0].annotation
+        logging.info(f"Option: Retrieved validator callable input argument type: {input_annotation}")
+
+        return_annotation: Any
+        if inspect.isclass(self.validator):
+            return_annotation = self.validator
+        else:
+            return_annotation = sign.return_annotation
+        logging.info(f"Option: Retrieved validator callable return type: {sign.return_annotation}")
+
+        # Check if it's needed to infer types from existing option validator.
+        if in_type is not None and rtype is not None:
+            # We don't check if the input/option types are not subtypes of the validator in/out types.
+            # We guarantee only that the argument of an asked type will be provided into user's validator function.
+            # Make a simple equality check and warn user (even though it's not our problem).
+            if in_type != input_annotation:
+                logging.warning(
+                    f"Input type of option '{self.name}' is mismatched with the validator: {in_type} != {input_annotation}"
+                )
+            if rtype != return_annotation:
+                logging.warning(
+                    f"Option type of option '{self.name}' is mismatched with the validator: {rtype} != {return_annotation}"
+                )
+            return in_type, rtype
+
+        if in_type is None:
+            if input_annotation is Parameter.empty:
+                raise RuntimeError(
+                    f"Can't infer type for option '{self.name}' input value, 'validator' callable input argument isn't typed"
+                )
+            in_type = input_annotation
+        if rtype is None:
+            if return_annotation is Signature.empty:
+                raise RuntimeError(
+                    f"Can't infer type for option '{self.name}', validator callable return value isn't typed"
+                )
+            rtype = return_annotation
+        return in_type, rtype
 
     def __json__(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "in_type": str(self.in_type),
+            "type": str(self.rtype),
             "required": self.required,
+            "default": str(self.default),
             "raw_value": self.raw_value,
             "value": self.value,
         }

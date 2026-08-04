@@ -390,6 +390,7 @@ dependencies = [
     { name = "kaktus-json-helpers" },
     { name = "pygraphviz" },
     { name = "ruff" },
+    { name = "typing-extensions" },
     { name = "watchdog" },
 ]
 
@@ -409,6 +410,7 @@ requires-dist = [
     { name = "kaktus-json-helpers", specifier = ">=4.0.2" },
     { name = "pygraphviz", specifier = ">=2.0.1" },
     { name = "ruff", specifier = ">=0.16.0" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
 

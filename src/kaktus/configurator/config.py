@@ -12,7 +12,7 @@ from kaktus.json_helpers.helpers import toReadableJSON, writeJSON
 
 from kaktus.configurator.arg_parser import IArgParser
 from kaktus.configurator.change_poller import ChangePoller
-from kaktus.configurator.commons import OptionName
+from kaktus.configurator.commons import OptionName, toNonGenericType
 from kaktus.configurator.env_parser import EnvParser
 from kaktus.configurator.errors import (
     DependencyViolation,
@@ -360,7 +360,7 @@ class IConfig:
         for option in options.values():
             if option.raw_value is _MISSING:
                 continue
-            if not isinstance(option.raw_value, option.in_type):
+            if not isinstance(option.raw_value, toNonGenericType(option.in_type)):
                 raise RuntimeError(
                     f"Invalid option {option.name} value: {option.raw_value} of type {type(option.raw_value)} (expected {option.in_type})"
                 )

@@ -137,7 +137,7 @@ class Generator:
                 option = getattr(option_group, option_name)
                 logging.info(f"Generator: Adding option: {option}")
                 self.option_infos.append(
-                    OptionInfo(option.name, option_group_name, option_name, option.in_type, option.type)
+                    OptionInfo(option.name, option_group_name, option_name, option.in_type, option.rtype)
                 )
 
     def generate(self) -> None:

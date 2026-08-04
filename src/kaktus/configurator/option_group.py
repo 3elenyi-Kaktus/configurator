@@ -19,7 +19,7 @@ class OptionGroup:
         options: list[Option] = cls.getOptions()
         qualifiers: str = ""
         for option in options:
-            qualifiers += option.name + str(option.in_type) + str(option.type) + str(signature(option.validator))
+            qualifiers += option.name + str(option.in_type) + str(option.rtype) + str(signature(option.validator))
         return hashlib.md5(qualifiers.encode()).hexdigest()
 
     @classmethod
