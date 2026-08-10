@@ -216,13 +216,14 @@ class Generator:
         logging.info("Generator: Creating '__init__' signature for ConfigProxy")
         init_signature: Signature = inspect.signature(IConfig.__init__)
         logging.info(f"Generator: Mangling the {IConfig} class '__init__': {init_signature}")
-        simplified_params: list[Parameter] = []
+        simplified_params: list[str] = []
         for param in init_signature.parameters.values():
-            if param.annotation is Parameter.empty:
-                simplified_params.append(param)
-            else:
-                simplified_param_type: str = self.simplifyType(param.annotation)
-                simplified_params.append(param.replace(annotation=simplified_param_type))
+            param_str: str = param.name
+            if param.annotation is not Parameter.empty:
+                param_str += f": {self.simplifyType(param.annotation)}"
+            if param.default is not Parameter.empty:
+                param_str += f" = {param.default}"
+            simplified_params.append(param_str)
         result: str = f"({', '.join(map(str, simplified_params))})"
         logging.info(f"Generator: Changed the '__init__' signature to: {result}")
         return result
