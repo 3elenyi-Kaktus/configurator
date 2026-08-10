@@ -10,3 +10,4 @@
 
 #### Write or fix: system options are not changeable from the runtime (they dont have any setters). Also make changes from runtime to reload the config (trigger the callbacks)
 #### Refactor Option in_type/rtype fields typing (make it safer and properly typed, instead of loosely attaching `type`)
+#### Make Option generic (`Option[I, R]`); type `_getOptionValue` / `_setOptionValue`; annotate option class attributes (or add a factory) so generated proxy getters typecheck without `no-any-return`
