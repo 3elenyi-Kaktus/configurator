@@ -1,18 +1,16 @@
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import util
 import inspect
-from inspect import signature
+from inspect import Parameter, Signature, signature
 import logging
 import os
 from pathlib import Path
-import re
-from re import Pattern
 import shlex
 import subprocess
 import sys
-import types
-from typing import Any
+from types import EllipsisType, NoneType, UnionType
+from typing import Any, ForwardRef, TypeVar, Union, get_args, get_origin
 
 from ruff import find_ruff_bin
 
@@ -80,6 +78,12 @@ class OptionInfo:
     runtime_type: type
 
 
+@dataclass(eq=True, frozen=True)
+class ImportData:
+    module_name: str
+    object_name: str | None = field(default=None)
+
+
 class Generator:
     def __init__(self, module_name: str, object_name: str, output: Path, command: str) -> None:
         self.module_name: str = module_name
@@ -87,34 +91,104 @@ class Generator:
         self.output: Path = output
         self.command: str = command
 
-        self.complex_imports: set[tuple[str, str]] = set()
-        self.imported_type_pattern: Pattern[str] = re.compile(r"(?P<import_source>[\w.]+)\.(?P<object>\w+)")
+        self.option_groups: list[type[OptionGroup]] = self.loadOptionGroups()
+        self.imports: set[ImportData] = {
+            ImportData("logging"),
+            ImportData("kaktus.configurator.config", "IConfig"),
+        }
 
-        self.option_infos: list[OptionInfo] = []
+    def loadOptionGroups(self) -> list[type[OptionGroup]]:
+        logging.info(f"Generator: Loading module '{self.module_name}' with target object: {self.object_name}")
+        spec = util.find_spec(self.module_name)
+        logging.info(f"Generator: Loaded spec: {spec}")
+        if spec is None:
+            raise ModuleNotFoundError(f"Module '{self.module_name}' not found")
+        module = util.module_from_spec(spec)
+        sys.modules[self.module_name] = module
+        spec.loader.exec_module(module)
 
-    def simplifyType(self, input_type: Any) -> str:
-        logging.info(f"Generator: Simplifying type '{input_type}'")
-        type_string: str
+        # Retrieve the list of option groups
+        groups: list[type[OptionGroup]] = getattr(module, self.object_name)
+        if (
+            not isinstance(groups, list)
+            or not all(isinstance(x, type) for x in groups)
+            or not all(issubclass(x, OptionGroup) for x in groups)
+        ):
+            raise TypeError(
+                f"Invalid option group listing: {groups} (expected 'list[type[OptionGroup]]', got: '{type(groups)}')"
+            )
+        return groups
 
-        # Quite a shaky branching here (I'm sure I missed some cases), might need some additional checking
-        if input_type is None or input_type is types.NoneType:
+    def addImport(self, tp: Any) -> None:
+        logging.info(f"Generator: Adding import for class '{tp}'")
+        try:
+            module: str = tp.__module__
+            qualname: str = tp.__qualname__
+        except AttributeError as exc:
+            logging.exception(exc)
+            logging.error("Generator: Failed to generate import")
+            return
+        if module == "builtins":
+            logging.info("Generator: Source is a 'builtins' module, skipping")
+            return
+        top_level_name = qualname.split(".", 1)[0]
+        logging.info(
+            f"Generator: Source module: '{tp.__module__}', qualified name: '{tp.__qualname__}', import target: '{top_level_name}'"
+        )
+        self.imports.add(ImportData(module, top_level_name))
+
+    def _simplifyType(self, tp: Any) -> str:
+        if isinstance(tp, TypeVar):
+            raise TypeError("Using TypeVar's in config options is prohibited")
+
+        if tp is None or tp is NoneType:
             return "None"
-        if isinstance(input_type, types.UnionType) or hasattr(
-            input_type, "__origin__"
-        ):  # If type is a Union or Generic/special form
-            type_string = str(input_type)
-        else:
-            type_string = input_type.__name__
-        logging.info(f"Generator: Retrieved type '{type_string}'")
+        if isinstance(tp, EllipsisType):
+            return "..."
+        if isinstance(tp, str):
+            return tp
+        if isinstance(tp, ForwardRef):
+            return tp.__forward_arg__
+        if isinstance(tp, list):
+            return f"[{', '.join(map(self.simplifyType, tp))}]"
 
-        if "." in type_string:
-            matches: list[tuple[str, str]] = self.imported_type_pattern.findall(type_string)
-            for match in matches:
-                logging.info(f"Generator: Adding '{match[0]}.{match[1]}' to type imports")
-                self.complex_imports.add(match)
-            type_string = self.imported_type_pattern.sub(r"\2", type_string)
-            logging.info(f"Generator: Simplified to '{type_string}'")
-        return type_string
+        origin = get_origin(tp)
+
+        # X | Y
+        if origin is UnionType or origin is Union:
+            return " | ".join(self.simplifyType(x) for x in get_args(tp))
+
+        # list[...], dict[...], Literal[...], Annotated[...], ...
+        if origin is not None:
+            self.addImport(origin)
+            name = getattr(origin, "__name__", None) or getattr(origin, "_name", None) or self.simplifyType(origin)
+            args = get_args(tp)
+            if not args:
+                return name
+
+            inners: list[str] = []
+            for arg in args:
+                # If we are inside other type, treat strings as a literals
+                if isinstance(arg, str):
+                    inners.append(f"'{arg}'")
+                else:
+                    inners.append(self.simplifyType(arg))
+            return f"{name}[{', '.join(inners)}]"
+
+        self.addImport(tp)
+
+        # Plain classes
+        if isinstance(tp, type):
+            return tp.__qualname__
+
+        # Any and similar special forms
+        return getattr(tp, "__name__", str(tp))
+
+    def simplifyType(self, tp: Any) -> str:
+        logging.info(f"Generator: Simplifying type '{tp}'")
+        result: str = self._simplifyType(tp)
+        logging.info(f"Generator: Simplified: '{tp}' -> '{result}'")
+        return result
 
     def createProperty(self, option_info: OptionInfo) -> list[str]:
         config_type_string: str = self.simplifyType(option_info.config_type)
@@ -129,79 +203,75 @@ class Generator:
         ]
         return res
 
-    def collectOptionInfos(self, option_groups: list[type[OptionGroup]]) -> None:
-        for option_group in option_groups:
+    def getImports(self) -> list[str]:
+        imports: list[str] = []
+        for import_data in self.imports:
+            if import_data.object_name is None:
+                imports.append(f"import {import_data.module_name}")
+            else:
+                imports.append(f"from {import_data.module_name} import {import_data.object_name}")
+        return imports
+
+    def mangleConfigInit(self) -> str:
+        logging.info("Generator: Creating '__init__' signature for ConfigProxy")
+        init_signature: Signature = inspect.signature(IConfig.__init__)
+        logging.info(f"Generator: Mangling the {IConfig} class '__init__': {init_signature}")
+        simplified_params: list[Parameter] = []
+        for param in init_signature.parameters.values():
+            if param.annotation is Parameter.empty:
+                simplified_params.append(param)
+            else:
+                simplified_param_type: str = self.simplifyType(param.annotation)
+                simplified_params.append(param.replace(annotation=simplified_param_type))
+        result: str = f"({', '.join(map(str, simplified_params))})"
+        logging.info(f"Generator: Changed the '__init__' signature to: {result}")
+        return result
+
+    def generate(self) -> None:
+        option_infos: list[OptionInfo] = []
+        for option_group in self.option_groups:
             option_group_name = option_group.__name__
             logging.info(f"Generator: Loading options from group '{option_group_name}'")
             for option_name in option_group.getOptionAttrs():
                 option = getattr(option_group, option_name)
                 logging.info(f"Generator: Adding option: {option}")
-                self.option_infos.append(
+                option_infos.append(
                     OptionInfo(option.name, option_group_name, option_name, option.in_type, option.rtype)
                 )
-
-    def generate(self) -> None:
-        # Load specified user module
-        logging.info(f"Generator: Loading module '{self.module_name}' with target object: {self.object_name}")
-        spec = util.find_spec(self.module_name)
-        logging.info(f"Generator: Loaded spec: {spec}")
-        if spec is None:
-            raise RuntimeError(f"Module '{self.module_name}' not found")
-        user_module = util.module_from_spec(spec)
-        sys.modules[self.module_name] = user_module
-        spec.loader.exec_module(user_module)
-
-        # Retrieve the list of option groups
-        option_groups: list[type[OptionGroup]] = getattr(user_module, self.object_name)
-        if (
-            not isinstance(option_groups, list)
-            or not all(isinstance(x, type) for x in option_groups)
-            or not all(issubclass(x, OptionGroup) for x in option_groups)
-        ):
-            raise RuntimeError(
-                f"Invalid option group listing: {option_groups} (expected 'list[type[OptionGroup]]', got: '{type(option_groups)}')"
-            )
-        self.collectOptionInfos(option_groups)
         properties: list[str] = [
-            "".join(tabulate(line, 1) for line in self.createProperty(option_info)) for option_info in self.option_infos
+            "".join(tabulate(line, 1) for line in self.createProperty(option_info)) for option_info in option_infos
         ]
 
-        logging.info("Generator: Creating __init__ signature for ConfigProxy")
-        init_params: str = str(inspect.signature(IConfig.__init__))
-        matches: list[tuple[str, str]] = self.imported_type_pattern.findall(init_params)
-        for match in matches:
-            logging.info(f"Generator: Adding '{match[0]}.{match[1]}' to type imports")
-            self.complex_imports.add(match)
-        init_params = self.imported_type_pattern.sub(r"\2", init_params)
-        logging.info(f"Generator: Simplified to '{init_params}'")
+        for option_group in self.option_groups:
+            self.addImport(option_group)
 
-        combined_hash: str = IConfig.getOptionGroupsHash(option_groups)
+        init_params: str = self.mangleConfigInit()
 
-        header_comment: str = (
+        # We can collect imports only after finishing doing all the stuff related to type simplifying
+        imports: list[str] = self.getImports()
+
+        combined_hash: str = IConfig.getOptionGroupsHash(self.option_groups)
+
+        newline: str = "\n"  # just a placeholder since 3.10 can't use backslashes in f-string expressions
+        result: str = (
             f"# ----\n"
             f"# Automatically generated by configurator lib (v{__version__})\n"
             f"# Command used: {self.command}\n"
+            f"# ----\n\n"
+            f"{newline.join(imports)}"
+            f"\n\n# ----\n"
             f"# Option groups hash signature:\n"
             f'_option_groups_hash: str = "{combined_hash}"\n'
             f"# ----\n\n"
+            f"\n\nclass ConfigProxy({IConfig.__name__}):\n"
         )
-
-        type_imports: str = "\n".join(f"from {x[0]} import {x[1]}" for x in self.complex_imports)
-        system_imports: str = "from kaktus.configurator.config import IConfig\nimport logging\n"
-        option_groups_imports: str = (
-            f"from {self.module_name} import {', '.join(option_group.__name__ for option_group in option_groups)}\n"
-        )
-
-        result: str = header_comment
-        result += "\n".join([type_imports, system_imports, option_groups_imports])
-        result += f"\n\nclass ConfigProxy({IConfig.__name__}):\n"
         result += tabulate(f"def __init__{init_params} -> None:\n", 1)
-        parameter_names: str = ",".join(x for x in signature(IConfig.__init__).parameters)
         result += tabulate("if _option_groups_hash != IConfig.getOptionGroupsHash(option_groups):\n", 2)
         result += tabulate(
             'logging.warning("ConfigProxy: Config option groups hash is different from actual option groups. This can be a sign that config is outdated and needs recreation")\n',
             3,
         )
+        parameter_names: str = ",".join(x for x in signature(IConfig.__init__).parameters)
         result += tabulate(f"{IConfig.__name__}.__init__({parameter_names})\n", 2)
         result += "\n".join(properties)
 

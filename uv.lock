@@ -388,6 +388,7 @@ name = "kaktus-configurator"
 source = { editable = "." }
 dependencies = [
     { name = "kaktus-json-helpers" },
+    { name = "kaktus-pycollection" },
     { name = "pygraphviz" },
     { name = "ruff" },
     { name = "typing-extensions" },
@@ -408,6 +409,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "kaktus-json-helpers", specifier = ">=4.0.2" },
+    { name = "kaktus-pycollection", specifier = ">=1.1.2" },
     { name = "pygraphviz", specifier = ">=2.0.1" },
     { name = "ruff", specifier = ">=0.16.0" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
@@ -432,6 +434,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b1/f0/e85493b1b0ea6dafbf520290fa58328df3957758af48908b913db0e1a484/kaktus_json_helpers-4.0.2.tar.gz", hash = "sha256:e573d0c84f025d63d9599e53cd3611832c2dca6f1cf3699112964a5108d4e0dc", size = 61052, upload-time = "2026-08-03T19:10:01.312Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/35/cd/0161896c97bf140ad5280bc09669d0160a9366f9adf15a7c020a4e7627fc/kaktus_json_helpers-4.0.2-py3-none-any.whl", hash = "sha256:9b9f3f1c5ee4b7c97a22209b745619856faad7bc3f1603b66bc1d2fd6af34dc9", size = 4014, upload-time = "2026-08-03T19:10:00.007Z" },
+]
+
+[[package]]
+name = "kaktus-pycollection"
+version = "1.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b7/71/3b2018327bbc4cce7e3e95b23097ee55198f3b934ebd4d08959a13c8e35f/kaktus_pycollection-1.1.2.tar.gz", hash = "sha256:ca97b6a4a3a026be60ed956700735cc86326c8b94f5affc90758faf22ff3e07b", size = 61688, upload-time = "2026-08-03T19:19:13.105Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/a4/a92c9acbcad29912e48f2f9aa7c9ffff4282a1e379fd6c13a688a16ac2b2/kaktus_pycollection-1.1.2-py3-none-any.whl", hash = "sha256:f1a7eceefef5c0aadfb555b223ce5520a74a778227d3b5e07a4498bc727ff181", size = 5524, upload-time = "2026-08-03T19:19:10.744Z" },
 ]
 
 [[package]]

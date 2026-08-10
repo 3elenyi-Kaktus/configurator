@@ -20,6 +20,7 @@ classifiers = []
 requires-python = ">=3.10"
 dependencies = [
     "kaktus-json-helpers>=4.0.2",
+    "kaktus-pycollection>=1.1.2",
     "pygraphviz>=2.0.1",
     "ruff>=0.16.0",
     "typing-extensions>=4.15.0",
@@ -81,6 +82,12 @@ force-sort-within-sections = true
 explicit_package_bases = true
 mypy_path = "src"
 strict = true
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"
+log_level = "INFO"
+log_cli_format = "%(levelname)-8s | %(message)s"
 
 [tool.poe.tasks]
 # Formatting, Linting, Typechecking
