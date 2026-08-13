@@ -1,8 +1,9 @@
 import argparse
-from argparse import ArgumentParser
+from argparse import Action, ArgumentParser
+from functools import wraps
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from kaktus.json_helpers.helpers import toReadableJSON
 
@@ -10,10 +11,24 @@ from kaktus.configurator.option import _MISSING, _Missing
 from kaktus.configurator.sys_options import SystemOption
 
 
+if TYPE_CHECKING:
+
+    class SuppressingParser(ArgumentParser):
+        pass
+else:
+
+    class SuppressingParser(ArgumentParser):
+        @wraps(ArgumentParser.add_argument)
+        def add_argument(*name_or_flags: str, **kw: Any) -> Action:
+            if kw.get("required") is False and "default" not in kw:
+                kw["default"] = argparse.SUPPRESS
+            return super().add_argument(*name_or_flags, **kw)
+
+
 class IArgParser:
     def __init__(self, description: str) -> None:
         # We don't want to allow non-strict arguments parsing
-        self.parser = ArgumentParser(description=description, allow_abbrev=False)
+        self.parser: SuppressingParser = SuppressingParser(description=description, allow_abbrev=False)
         self.parser.add_argument(
             "-p",
             "--config-filepath",
@@ -23,14 +38,12 @@ class IArgParser:
         )
         self.parser.add_argument(
             "--env-filepath",
-            default=argparse.SUPPRESS,
             required=False,
             help="Path to .env file",
             dest=SystemOption.ENV_FILEPATH.name,
         )
         self.parser.add_argument(
             "--option-graphs-dirpath",
-            default=argparse.SUPPRESS,
             required=False,
             help="Path to directory for outputting option graphs",
             dest=SystemOption.OPTION_GRAPHS_DIRPATH.name,
@@ -57,7 +70,7 @@ class IArgParser:
 
     def getOptionGraphsDirpath(self) -> Path | None:
         arg: str | _Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
-        return Path(arg) if arg is not _MISSING else None
+        return Path(arg) if not isinstance(arg, _Missing) else None
 
     @staticmethod
     def __json__() -> dict[str, str]:

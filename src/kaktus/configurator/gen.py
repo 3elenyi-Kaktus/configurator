@@ -196,7 +196,7 @@ class Generator:
         res = [
             "@property\n",
             f"def {option_info.name}(self) -> {runtime_type_string}:\n",
-            f"    return self._getOptionValue({option_info.group_name}.{option_info.config_name})\n\n",
+            f"    return self._getOptionValue({option_info.group_name}.{option_info.config_name})  # type: ignore[no-any-return]\n\n",
             f"@{option_info.name}.setter\n",
             f"def {option_info.name}(self, value: {config_type_string}) -> None:\n",
             f"    self._setOptionValue({option_info.group_name}, {option_info.group_name}.{option_info.config_name}, value)\n",
