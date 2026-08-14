@@ -1,28 +1,22 @@
 import argparse
 from argparse import Action, ArgumentParser
-from functools import wraps
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from kaktus.json_helpers.helpers import toReadableJSON
+from typing_extensions import override
 
 from kaktus.configurator.option import _MISSING, _Missing
 from kaktus.configurator.sys_options import SystemOption
 
 
-if TYPE_CHECKING:
-
-    class SuppressingParser(ArgumentParser):
-        pass
-else:
-
-    class SuppressingParser(ArgumentParser):
-        @wraps(ArgumentParser.add_argument)
-        def add_argument(*name_or_flags: str, **kw: Any) -> Action:
-            if kw.get("required") is False and "default" not in kw:
-                kw["default"] = argparse.SUPPRESS
-            return super().add_argument(*name_or_flags, **kw)
+class SuppressingParser(ArgumentParser):
+    @override
+    def add_argument(self, *name_or_flags: str, **kw: Any) -> Action:
+        if kw.get("required") is False and "default" not in kw:
+            kw["default"] = argparse.SUPPRESS
+        return super().add_argument(*name_or_flags, **kw)
 
 
 class IArgParser:

@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias
-from uuid import uuid4
 
-from pygraphviz import AGraph
+from typing_extensions import Self
 
 from kaktus.configurator.commons import OptionName
+from kaktus.configurator.graph import DAG
 
 
 if TYPE_CHECKING:
@@ -18,7 +16,7 @@ class Depends:
     def __init__(self, *args: Option):
         self.groups: list[tuple[OptionName, ...]] = [tuple(option.name for option in args)]
 
-    def __and__(self, other: Depends) -> Depends:
+    def __and__(self, other: Self) -> Self:
         result: list[tuple[OptionName, ...]] = []
         for dependency_group in self.groups:
             for other_dependency_group in other.groups:
@@ -26,12 +24,9 @@ class Depends:
         self.groups = result
         return self
 
-    def __or__(self, other: Depends) -> Depends:
+    def __or__(self, other: Self) -> Self:
         self.groups.extend(other.groups)
         return self
-
-
-DependencyGroup: TypeAlias = list[OptionName]
 
 
 # TODO  This is a straightforward way to resolve all possible graphs by brute-forcing every
@@ -39,89 +34,8 @@ DependencyGroup: TypeAlias = list[OptionName]
 #       There may be a better way (i.e. recursion).
 
 
-class OptionGraph:
-    def __init__(self, images_dirpath: Path | None) -> None:
-        self.images_dirpath: Path | None = images_dirpath
-        if self.images_dirpath is not None:
-            self.images_dirpath.mkdir(parents=True, exist_ok=True)
-        self.nodes: set[OptionName] = set()
-        self.edges: dict[OptionName, list[OptionName]] = {}
-
-    def addNode(self, name: OptionName, children: list[OptionName] | None = None) -> None:
-        if name in self.nodes:
-            raise RuntimeError(f"Node {name} already exists")
-        self.nodes.add(name)
-        self.edges[name] = []
-        if children is not None:
-            for child in children:
-                self.addEdge(name, child)
-
-    def addEdge(self, start: OptionName, end: OptionName) -> None:
-        if start not in self.nodes:
-            raise RuntimeError(f"Start node '{start}' doesn't exist")
-        if end not in self.nodes:
-            raise RuntimeError(f"End node '{end}' doesn't exist")
-
-        paths: list[list[OptionName]] | None = self.getPaths(end, start)
-        if paths is not None:
-            if self.images_dirpath is None:
-                logging.warning("Option graphs dirpath is not set. You should set it to get a visual reference")
-            else:
-                self.saveGraph()
-            raise RuntimeError(f"A cycle found between '{start}' and '{end}': {paths}")
-
-        self.edges[start].append(end)
-
-    def getPaths(self, start: OptionName, end: OptionName) -> list[list[OptionName]] | None:
-        if start == end:
-            return [[end]]
-        if not self.edges[start]:
-            return None
-        result: list[list[OptionName]] = []
-        for child in self.edges[start]:
-            if (paths := self.getPaths(child, end)) is not None:
-                for path in paths:
-                    result.append([start, *path])
-        if result:
-            return result
-        return None
-
-    def collectDependencies(self, option_name: OptionName) -> DependencyGroup:
-        dependencies: DependencyGroup = []
-        for child in self.edges[option_name]:
-            dependencies.append(child)
-            dependencies.extend(self.collectDependencies(child))
-        return dependencies
-
-    def getLongestPathLen(self) -> int:
-        longest_path: int = 0
-        for start_node in self.nodes:
-            for end_node in self.nodes:
-                paths: list[list[OptionName]] | None = self.getPaths(start_node, end_node)
-                if paths is None:
-                    continue
-                longest_path = max(longest_path, *[len(path) for path in paths])
-        return longest_path
-
-    def saveGraph(self) -> None:
-        graph: AGraph = AGraph(strict=False, directed=True)
-        graph.node_attr["color"] = "lightblue2"
-        graph.node_attr["style"] = "filled"
-
-        for node_name in self.nodes:
-            graph.add_node(node_name)
-            for child in self.edges[node_name]:
-                graph.add_edge(node_name, child)
-
-        max_path_len: int = self.getLongestPathLen()
-        graph.unflatten(f"-f -l 3 -c {max_path_len}")
-        graph.layout(prog="dot")  # defaults to neato
-        graph.draw(f"{uuid4()}.png")
-
-
 Edge: TypeAlias = tuple[OptionName, OptionName]
-
-
+DependencyGroup: TypeAlias = list[OptionName]
 ExclusiveGroup: TypeAlias = tuple[OptionName, ...]
 ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 
@@ -129,7 +43,18 @@ ExclusiveGroupRule: TypeAlias = tuple[ExclusiveGroup, ...]
 class DependenciesResolver:
     def __init__(self, images_dirpath: Path | None):
         self.images_dirpath: Path | None = images_dirpath
-        self.graphs: list[OptionGraph] = []
+
+        self.graphs: list[DAG[OptionName]] = []
+
+        if self.images_dirpath is None:
+            return
+        try:
+            DAG.requireDrawing()
+        except ImportError as exc:
+            raise ImportError(
+                "Drawing option graphs requires the 'graphs' extra. Install the 'kaktus-configurator[graphs]'"
+            ) from exc
+        self.images_dirpath.mkdir(parents=True, exist_ok=True)
 
     def resolve(
         self,
@@ -145,10 +70,10 @@ class DependenciesResolver:
 
     @staticmethod
     def checkGraph(
-        graph: OptionGraph, options: list[OptionName], exclusive_group_rules: list[ExclusiveGroupRule]
+        graph: DAG[OptionName], options: list[OptionName], exclusive_group_rules: list[ExclusiveGroupRule]
     ) -> None:
         for option in options:
-            dependencies: DependencyGroup = graph.collectDependencies(option)
+            dependencies: DependencyGroup = graph.getDescendants(option)
             logging.info(f"Dependencies for option {option} local graph: {dependencies}")
 
             # Ugly, but I don't know a better way to do this
@@ -182,18 +107,26 @@ class DependenciesResolver:
             logging.info(edge_combinations)
         return edge_combinations
 
-    def buildGraph(self, options: list[OptionName], relations: list[Edge]) -> OptionGraph:
-        graph: OptionGraph = OptionGraph(self.images_dirpath)
+    def buildGraph(self, options: list[OptionName], relations: list[Edge]) -> DAG[OptionName]:
+        graph: DAG[OptionName] = DAG()
         for option in options:
             graph.addNode(option)
-        for edge in relations:
-            graph.addEdge(*edge)
+        for start, end in relations:
+            try:
+                graph.addEdge(start, end)
+            except RuntimeError as exc:
+                if self.images_dirpath is None:
+                    logging.warning("Option graphs dirpath is not set. You should do it to get a visual reference")
+                else:
+                    graph.save(self.images_dirpath)
+                raise RuntimeError("Failed to build the graph") from exc
+
         return graph
 
     def collectDependencies(self, option_name: OptionName) -> list[DependencyGroup]:
         dependencies: list[DependencyGroup] = []
         for graph in self.graphs:
-            dependencies.append(graph.collectDependencies(option_name))
+            dependencies.append(graph.getDescendants(option_name))
         logging.info(f"Deps for {option_name}: {dependencies}")
         logging.info("\n\n")
         return dependencies

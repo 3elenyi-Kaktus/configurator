@@ -51,9 +51,8 @@ class OptionGroup:
         super().__init_subclass__()
         for attr_name in dir(cls):
             value = getattr(cls, attr_name)
-            if not isinstance(value, Option):
-                continue
-            if attr_name in cls.__dict__:
+            # We want to only copy options which are inherited from the parent class
+            if not isinstance(value, Option) or attr_name in cls.__dict__:
                 continue
             logging.info(f"Attr: '{attr_name}'")
             setattr(cls, attr_name, deepcopy(value))

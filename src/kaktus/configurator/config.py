@@ -41,14 +41,19 @@ class IConfig:
         arg_parser: IArgParser | None = None,
         exclusive_group_rules: list[ExclusiveGroupRule] | None = None,
     ):
-        if config_fpath is None and arg_parser is None:
-            raise RuntimeError("Configurator needs either a path to config file or a command argument parser")
-
+        if config_fpath is not None:
+            resolved_fpath = config_fpath
+        elif arg_parser is not None:
+            resolved_fpath = arg_parser.getConfigFilepath()
+        else:
+            raise RuntimeError("Configurator needs either a path to config file or a CLI parser")
+        self.config_fpath: Path = resolved_fpath
         self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: IArgParser | None = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
             exclusive_group_rules if exclusive_group_rules is not None else []
         )
+
         self.reload_lock: Lock = Lock()
         self.change_poller: ChangePoller | None = None
         self.properties: Properties = self._getProps()
@@ -63,6 +68,7 @@ class IConfig:
         option_graphs_dirpath: Path | None = None
         if self.arg_parser is not None:
             option_graphs_dirpath = self.arg_parser.getOptionGraphsDirpath()
+
         self.deps_resolver: DependenciesResolver = DependenciesResolver(option_graphs_dirpath)
 
         # User-provided options and other preferences might be malformed.
@@ -70,7 +76,6 @@ class IConfig:
         # If any of them fail, then there is no use to continue anyway.
         self._staticCheck(option_groups)
 
-        self.config_fpath: Path = config_fpath if config_fpath is not None else self.arg_parser.getConfigFilepath()
         if not self.config_fpath.is_file():
             raise InvalidConfig(f"Config file at '{self.config_fpath}' doesn't exist or isn't a file")
         if self.config_fpath.suffix != ".json":
@@ -88,10 +93,9 @@ class IConfig:
         self._checkForDuplicates(option_groups)
 
         # Save all the options as a reference
+        all_groups: list[type[OptionGroup]] = [*option_groups, SystemOption]
         self.registered_options = {
-            option.name: option
-            for option_group in [*option_groups, SystemOption]
-            for option in option_group.getOptions()
+            option.name: option for option_group in all_groups for option in option_group.getOptions()
         }
 
         # Check for validity of provided option relations: dependencies and exclusive group rules
@@ -225,7 +229,7 @@ class IConfig:
         # can simply load its arguments. Otherwise, we have to inject config filepath into arguments manually.
         cmd_args: dict[str, Any]
         if self.arg_parser is not None:
-            # Read all args from command line
+            # Read all args from CLI
             cmd_args = self.arg_parser.getArgs()
         else:
             cmd_args = {SystemOption.CONFIG_FILEPATH.name: str(self.config_fpath)}
@@ -254,7 +258,7 @@ class IConfig:
         # Check for any excessive options
         try:
             self._validateOptionNames(args)
-        except BaseException as exc:
+        except Exception as exc:
             raise InvalidOptionName("Failed to validate option names") from exc
 
         # At this point we performed all possible checks on arguments as is.
@@ -273,7 +277,7 @@ class IConfig:
         #   For now, make it a user's problem.
         try:
             self._resolveExclusiveGroups(options)
-        except BaseException as exc:
+        except Exception as exc:
             raise ExclusiveGroupViolation("One of exclusive options rules was violated") from exc
 
         # We resolved which exclusive group rules had to be applied, now we must check the option dependencies.
@@ -282,26 +286,32 @@ class IConfig:
         # 2) otherwise, manually reset `required` flag, if needed.
         try:
             self._resolveOptionDependencies(options)
-        except BaseException as exc:
+        except Exception as exc:
             raise DependencyViolation("One of options was set, despite of not fulfilled dependencies for it") from exc
 
         # We can check for missing options now.
         # `required` flag could have been mangled by previous resolves and differ from registered options list.
         try:
             self._checkForMissing(options)
-        except BaseException as exc:
+        except Exception as exc:
             raise MissingOption("Some of required options were not set") from exc
 
         # Nothing seems off about passed options (at least on config logic level).
         # We can safely run userspace argument checks.
         try:
             self._validateOptions(options)
-        except BaseException as exc:
+        except Exception as exc:
             raise InvalidOptionValue("Failed to validate config options") from exc
 
         # We successfully validated all options without errors and can save them
         logging.info(f"Config: Converted to options: {toReadableJSON(options)}")
         self.options = options
+
+    def _readProp(self, prop: property) -> Any:
+        getter = prop.fget
+        if getter is None:
+            raise RuntimeError(f"Property {prop} has no getter")
+        return getter(self)
 
     def _onReload(self) -> None:
         logging.info("Config: Reload requested")
@@ -309,27 +319,28 @@ class IConfig:
             logging.info("Config: Reload lock acquired, starting reload")
             # Load all current values of properties
             for prop in self.properties:
-                self.old_values[prop] = prop.fget(self)
+                self.old_values[prop] = self._readProp(prop)
             try:
                 # Reread arguments
                 self._recreate()
-            except BaseException as exc:
+            except Exception as exc:
                 logging.exception(exc)
                 logging.error("Config: Reload failed, keeping old configuration")
                 return
 
             # Reload necessary classes based on changed props and registered reload callbacks
             for prop in self.properties:
-                if self.old_values[prop] != prop.fget(self):
+                if self.old_values[prop] != self._readProp(prop):
+                    prop_name: str = getattr(prop.fget, "__name__", "<property>")
                     logging.info(
-                        f"Config: Property {prop.fget.__name__} was changed: {self.old_values[prop]} -> {prop.fget(self)}"
+                        f"Config: Property {prop_name} was changed: {self.old_values[prop]} -> {self._readProp(prop)}"
                     )
             logging.info("Config: Reloaded config successfully, propagating changes to dependants")
             for callback, triggered_on in self.on_reload_triggers.items():
                 args: list[Any] = []
                 needs_reloading: bool = False
                 for prop in triggered_on:
-                    prop_value: Any = prop.fget(self)
+                    prop_value: Any = self._readProp(prop)
                     args.append(prop_value)
                     if self.old_values[prop] != prop_value:
                         needs_reloading = True
@@ -337,7 +348,7 @@ class IConfig:
                     continue
                 try:
                     callback(*args)
-                except BaseException as exc:
+                except Exception as exc:
                     logging.exception(exc)
                     logging.error(f"Config: Reloading trigger {callback} failed")
             logging.info("Config: Reload completed")
@@ -366,7 +377,7 @@ class IConfig:
                 )
             try:
                 option.value = option.validator(option.raw_value)
-            except BaseException as exc:
+            except Exception as exc:
                 raise RuntimeError(f"Exception occurred while validating option {option.name}") from exc
 
     @staticmethod
@@ -411,12 +422,12 @@ class IConfig:
 
     @property
     def config_filepath(self) -> Path:
-        return self._getOptionValue(SystemOption.CONFIG_FILEPATH)
+        return self._getOptionValue(SystemOption.CONFIG_FILEPATH)  # type: ignore[no-any-return]
 
     @property
     def env_filepath(self) -> Path | None:
-        return self._getOptionValue(SystemOption.ENV_FILEPATH)
+        return self._getOptionValue(SystemOption.ENV_FILEPATH)  # type: ignore[no-any-return]
 
     @property
     def option_graphs_dirpath(self) -> Path | None:
-        return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)
+        return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)  # type: ignore[no-any-return]

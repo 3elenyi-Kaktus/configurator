@@ -12,7 +12,7 @@ import sys
 from types import EllipsisType, NoneType, UnionType
 from typing import Any, ForwardRef, TypeVar, Union, get_args, get_origin
 
-from ruff import find_ruff_bin
+from ruff import find_ruff_bin  # type: ignore[import-untyped]
 
 from kaktus.configurator._version import __version__
 from kaktus.configurator.config import IConfig
@@ -105,6 +105,10 @@ class Generator:
             raise ModuleNotFoundError(f"Module '{self.module_name}' not found")
         module = util.module_from_spec(spec)
         sys.modules[self.module_name] = module
+        if spec.loader is None:
+            raise ValueError(
+                f"Module '{self.module_name}' is not executable (.py file or package with __init__.py required)"
+            )
         spec.loader.exec_module(module)
 
         # Retrieve the list of option groups

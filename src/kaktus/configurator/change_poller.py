@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from threading import Thread
 
+from typing_extensions import override
 from watchdog.events import (
     DirCreatedEvent,
     DirModifiedEvent,
@@ -23,6 +24,7 @@ class EventsHandler(FileSystemEventHandler):
         self.callback: Callable[[], None] = callback
         FileSystemEventHandler.__init__(self)
 
+    @override
     def dispatch(self, event: FileSystemEvent) -> None:
         self.on_any_event(event)
         if event.is_directory:
@@ -38,19 +40,23 @@ class EventsHandler(FileSystemEventHandler):
         ):
             getattr(self, f"on_{event.event_type}")(event)
 
+    @override
     def on_any_event(self, event: FileSystemEvent) -> None:
         logging.info(f"EventsHandler: Event occurred: {event}")
 
+    @override
     def on_created(self, event: DirCreatedEvent | FileCreatedEvent) -> None:
         # DirCreatedEvent should be rejected in dispatch & event_filter
         logging.info("EventsHandler: Triggered on file creation at targeted filepath")
         self._trigger()
 
+    @override
     def on_modified(self, event: DirModifiedEvent | FileModifiedEvent) -> None:
         # DirModifiedEvent should be rejected in dispatch & event_filter
         logging.info("EventsHandler: Triggered on file modification at targeted filepath")
         self._trigger()
 
+    @override
     def on_moved(self, event: DirMovedEvent | FileMovedEvent) -> None:
         # DirMovedEvent should be rejected in dispatch & event_filter
         logging.info("EventsHandler: Triggered on moving file to targeted filepath")
@@ -88,7 +94,7 @@ class ChangePoller:
                     logging.info("ChangePoller: Stop request acknowledged")
                     break
                 observer.join(1)
-        except BaseException as error:
+        except Exception as error:
             logging.exception(error)
         observer.stop()
         observer.join()
