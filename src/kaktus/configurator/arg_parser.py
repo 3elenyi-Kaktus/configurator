@@ -14,6 +14,7 @@ from kaktus.configurator.sys_options import SystemOption
 class SuppressingParser(ArgumentParser):
     @override
     def add_argument(self, *name_or_flags: str, **kw: Any) -> Action:
+        # TODO check what will happen if required is not set, since its optional
         if kw.get("required") is False and "default" not in kw:
             kw["default"] = argparse.SUPPRESS
         return super().add_argument(*name_or_flags, **kw)

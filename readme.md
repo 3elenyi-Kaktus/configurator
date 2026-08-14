@@ -5,7 +5,7 @@
 A simple settings configurator for projects management.
 
 
-# Usage concept
+## Usage concept
 
 Usually, every project uses some kind of settings file, either a python file with defined constants, `YAML`/`JSON` files or just a hardcoded ones. In my own opinion (which may not always be the right one), the proper way of dealing with configs is using pure config files like `YAML` and `JSON`.
 
@@ -13,14 +13,20 @@ Using string literals inside the code is cumbersome: renaming options is a refac
 
 
 
-# Dependencies
+## Installation
 The main target Python version is `3.10`. Correctness of work in any other version is not guaranteed.
 
-This library depends on a custom `json-helpers` library, which is used to print pretty JSON's in logs.
+```bash
+pip install kaktus-configurator
+```
 
+Drawing option-dependency graph images (`--option-graphs-dirpath`) needs the optional extra:
 
+```bash
+pip install 'kaktus-configurator[graphs]'
+```
 
-# Setting up from scratch
+## Setting up from scratch
 We will further imply that user defined files are stored in a `settings/` directory.
 
 Create an empty `settings/` directory (with `__init__.py` file if needed) in a user-written codespace. The final directory structure will be commonly the following:
@@ -49,14 +55,14 @@ Every option is an instance with a configurable typecheckers and validators.
 When listing options, it's preferable to use style like:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.option import Option
 
 
 class MyOption(OptionGroup):
-    OPTION_ONE = Option("option_one", type=str)
-    OTHER_OPTION = Option("other_option", type=int, required=False)
+    OPTION_ONE = Option("option_one", rtype=str)
+    OTHER_OPTION = Option("other_option", rtype=int, required=False)
 ```
 String literals should be unique, since there is no way to distinguish them [TODO](#indev-features).
 
@@ -72,9 +78,9 @@ Its instance holds all information about the option:
   Option value type in config file. If it mismatches with actual type on config validation, the configurator will autofail the process.
 
   **Disclaimer**: Configurator (for now) supports only simple types, such as `list`, `str`, `bool`, etc. Complex types (such as `list[int]` or `tuple[int, str]`) won't work from the box, use custom validators for them.
-* `type`
+* `rtype`
 
-  Option value type. Used to create a concrete typing while auto-generating proxy config file.
+  Option value type after validation. Used to create a concrete typing while auto-generating proxy config file.
 * `validator`
 
   Validation function (or basically any callable), which will be applied to the read value on config initialization. You can perform your own typechecks in it, and modify final value as you want. Default validation just forwards value through implementation without any modifications.
@@ -90,7 +96,7 @@ Its instance holds all information about the option:
 
 By default, configurator will check that all registered options are present in loaded config in any way: via config file, command line or `.env` file. If any of the options was not found, or if configurator found an unregistered option, it will fail the process.
 
-Configurator needs option input type (which is retrieved from config file or other sources) and final option value (to correctly auto-generate proxy files). These types can be inferred automatically from the `validator` function, if it's a typed one. Otherwise (`validator` isn't a typed one, or you want to narrow down the types, if the `validator` ones are too broad for this exact case), you have to specify the types manually. Both `in_type`/`type` have higher precedence over the `validator` types. In the case when there is no `validator` function defined at all, you can omit the `in_type` and use only the `type` parameter (since raw values will be simply forwarded through and types won't change at all).
+Configurator needs option input type (which is retrieved from config file or other sources) and final option value (to correctly auto-generate proxy files). These types can be inferred automatically from the `validator` function, if it's a typed one. Otherwise (`validator` isn't a typed one, or you want to narrow down the types, if the `validator` ones are too broad for this exact case), you have to specify the types manually. Both `in_type`/`rtype` have higher precedence over the `validator` types. In the case when there is no `validator` function defined at all, you can omit the `in_type` and use only the `rtype` parameter (since raw values will be simply forwarded through and types won't change at all).
 
 #### Important note 1 (todo)
 If option is set as not required, there is no way (for now) to determine, if it was completely omitted in all sources or intentionally set to value `None` [TODO](#indev-features).
@@ -104,7 +110,6 @@ Configurator supports command line arguments. If needed, you'll have to create a
 
 ```python
 # arg_parser.py
-import argparse
 from kaktus.configurator.arg_parser import IArgParser
 from settings.options import MyOption
 from settings.version import __version__
@@ -116,14 +121,13 @@ class ArgParser(IArgParser):
         self.parser.add_argument(
             "--my-awesome-option",
             required=False,
-            default=argparse.SUPPRESS,
             help="Some useful description",
             dest=MyOption.OPTION_ONE.name,
         )
         self.parser.add_argument(...)
 ```
 
-You can tweak the parser options as you want, using the standard `argparse` library guidelines. The only requirement is adding `default=argparse.SUPPRESS` if option isn't required and has no default value (either in argparser, or in the options listing).
+You can tweak the parser options as you want, using the standard `argparse` library guidelines.
 
 #### Important note 1
 I recommend to use the separate file, dedicated to storing the app version info. Though, using the versioning is completely up to user and can be skipped.
@@ -286,29 +290,29 @@ You can certainly write some internal program logic, which detects these situati
 To solve this, you can use exclusive group rules:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
-        (MyOption.PRINT_FLAG,),
-        (MyOption.FIBO_NUMBER,),
+        (MyOption.PRINT_FLAG.name,),
+        (MyOption.FIBO_NUMBER.name,),
     ),
 ]
 ```
 
-If `PRINT_FLAG` is defined, then config will automatically fail the start if `FIBO_NUMBER` is defined too and vice versa.
+Each inner tuple is a group of **option names**. If `PRINT_FLAG` is defined, then config will automatically fail the start if `FIBO_NUMBER` is defined too and vice versa.
 
 If there are multiple options to be excluded (for example, in mode 2 we can use `TIMEOUT`, to throw an error if number wasn't computed in time), they can be used at once in a single rule:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.rules import ExclusiveGroupRule
 
 exclusive_group_rules: list[ExclusiveGroupRule] = [
     (
-        (MyOption.PRINT_FLAG,),
-        (MyOption.FIBO_NUMBER, MyOption.TIMEOUT),
+        (MyOption.PRINT_FLAG.name,),
+        (MyOption.FIBO_NUMBER.name, MyOption.TIMEOUT.name),
     ),
 ]
 ```
@@ -327,9 +331,13 @@ So basically, we want to solve another problem: one option depends on another on
 ```python
 # options.py
 from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.rules import Depends
 
-(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER)),)
+
+class MyOption(OptionGroup):
+    FIBO_NUMBER = Option("fibo_number", rtype=int, required=False)
+    TIMEOUT = Option("timeout", rtype=float, required=False, dependencies=Depends(FIBO_NUMBER))
 ```
 
 Here, if somehow `TIMEOUT` is defined, while `FIBO_NUMBER` is not set, configurator will detect this problem.
@@ -339,16 +347,29 @@ You can chain `Depends` rules with `&` and `|` operators for **AND**ing and **OR
 ```python
 # options.py
 from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.rules import Depends
 
-# We want to use timeout, if any of Fibo numbers (or both) will be computed
-(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) | Depends(MyOption.FIBO_NUMBER_2)),)
 
-# We want to use timeout only when computing both numbers at once
-(Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1) & Depends(MyOption.FIBO_NUMBER_2)),)
-(
-    Option(MyOption.TIMEOUT, float, dependencies=Depends(MyOption.FIBO_NUMBER_1, MyOption.FIBO_NUMBER_2)),
-)  # Equivalent to the previous one
+class MyOption(OptionGroup):
+    FIBO_NUMBER_1 = Option("fibo_number_1", rtype=int, required=False)
+    FIBO_NUMBER_2 = Option("fibo_number_2", rtype=int, required=False)
+    # Timeout if any of the Fibo numbers (or both) will be computed
+    TIMEOUT_ANY = Option(
+        "timeout_any",
+        rtype=float,
+        required=False,
+        dependencies=Depends(FIBO_NUMBER_1) | Depends(FIBO_NUMBER_2),
+    )
+    # Timeout only when computing both numbers at once
+    TIMEOUT_BOTH = Option(
+        "timeout_both",
+        rtype=float,
+        required=False,
+        dependencies=Depends(FIBO_NUMBER_1) & Depends(FIBO_NUMBER_2),
+        # or an equivalent
+        dependencies=Depends(FIBO_NUMBER_1, FIBO_NUMBER_2),
+    )
 ```
 
 #### Important note
@@ -434,7 +455,7 @@ If there are even more levels of submodules, this schema can become quite tediou
 This method can handle any amount of submodule levels in a more simple manner. To describe such structure in Python, you can use `@optionGroup` decorator. You can create a base class first, to bind groups to it:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.option import Option
 from kaktus.configurator.option_group import optionGroup, OptionGroup
 
@@ -445,21 +466,21 @@ class BaseOption(OptionGroup):
 
 @optionGroup(parent=BaseOption, prefix="fibo")
 class FiboOption(OptionGroup):
-    OPTION_1 = Option("option_1", int)
-    OPTION_2 = Option("option_2", int)
+    OPTION_1 = Option("option_1", rtype=int)
+    OPTION_2 = Option("option_2", rtype=int)
 
 
 @optionGroup(parent=BaseOption, prefix="parser")
 class ParserOption(OptionGroup):
-    OPTION_A = Option("option_a", str)
-    OPTION_B = Option("option_b", str)
+    OPTION_A = Option("option_a", rtype=str)
+    OPTION_B = Option("option_b", rtype=str)
 ```
 This is not a necessary step, since if parent is not specified, configurator will unwrap these groups as if they were bound to the root one.
 
 Under the hood before trying to read options from config, configurator will try to flatten it first, using combinations of prefixes and parents, acquired from option groups. Basically, this means that configurator will iteratively walk up the tree from leaves, adding the prefix to all options in current group and adding them to the parent, repeating until no groups are left. Mentioned config will be thus reduced to the equivalent of the following one:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.option import Option
 from kaktus.configurator.option_group import OptionGroup
 
@@ -469,13 +490,13 @@ class BaseOption(OptionGroup):
 
 
 class FiboOption(OptionGroup):
-    OPTION_1 = Option("fibo_option_1", int)
-    OPTION_2 = Option("fibo_option_2", int)
+    OPTION_1 = Option("fibo_option_1", rtype=int)
+    OPTION_2 = Option("fibo_option_2", rtype=int)
 
 
 class ParserOption(OptionGroup):
-    OPTION_A = Option("parser_option_a", str)
-    OPTION_B = Option("parser_option_b", str)
+    OPTION_A = Option("parser_option_a", rtype=str)
+    OPTION_B = Option("parser_option_b", rtype=str)
 ```
 
 With this setup both beforementioned config variants will work fine: first one will be used as is, and the second one will be transformed to the first one.
@@ -487,45 +508,87 @@ With this setup both beforementioned config variants will work fine: first one w
 
 The last one shows if specified prefix should be added to the real option name. The default behavior is to add the prefix. Otherwise, configurator will use this prefix while unwrapping the config, but won't add it to the option names, forwarding them as is.
 
-# Inheritance
+For example, you can create a virtual `limits` group with real `http` / `worker` children:
+
+```json
+{
+  "limits": {
+    "http": {
+      "max_connections": 10
+    },
+    "worker": {
+      "pool_size": 4
+    }
+  }
+}
+```
+
+```python
+# options.py
+from kaktus.configurator.option import Option
+from kaktus.configurator.option_group import optionGroup, OptionGroup
+
+
+@optionGroup(prefix="limits", real=False)
+class LimitsProxy(OptionGroup):
+    pass
+
+
+@optionGroup(parent=LimitsProxy, prefix="http")
+class HttpLimits(OptionGroup):
+    MAX_CONNECTIONS = Option("max_connections", rtype=int)
+
+
+@optionGroup(parent=LimitsProxy, prefix="worker")
+class WorkerLimits(OptionGroup):
+    POOL_SIZE = Option("pool_size", rtype=int)
+```
+
+JSON file still nests options under `"limits"` section (as it would do with syntactic sugar grouping), but option names will stay `http_max_connections` and `worker_pool_size` — not `limits_http_max_connections`. As this is purely a syntactic sugar, you have to be aware that defining options with same names in different virtual groups would still result in an error.
+
+## Inheritance
 If you have multiple option groups with common options, you can use inheritance alongside the `@optionGroup` decorator:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.option import Option
 from kaktus.configurator.option_group import optionGroup, OptionGroup
 
 
 class CommonOption(OptionGroup):
-    TIMEOUT = Option("timeout", float)
+    TIMEOUT = Option("timeout", rtype=float)
 
 
 @optionGroup(prefix="fibo")
 class FiboOption(CommonOption):
-    OPTION_1 = Option("option_1", int)
+    OPTION_1 = Option("option_1", rtype=int)
 
 
 @optionGroup(prefix="parser")
 class ParserOption(CommonOption):
-    OPTION_A = Option("option_a", str)
+    OPTION_A = Option("option_a", rtype=str)
 ```
 This is equivalent to the following:
 
 ```python
-# option.py
+# options.py
 from kaktus.configurator.option import Option
 from kaktus.configurator.option_group import optionGroup, OptionGroup
 
 
 @optionGroup(prefix="fibo")
 class FiboOption(OptionGroup):
-    OPTION_1 = Option("option_1", int)
-    TIMEOUT = Option("timeout", float)
+    OPTION_1 = Option("option_1", rtype=int)
+    TIMEOUT = Option("timeout", rtype=float)
 
 
 @optionGroup(prefix="parser")
 class ParserOption(OptionGroup):
-    OPTION_A = Option("option_a", str)
-    TIMEOUT = Option("timeout", float)
+    OPTION_A = Option("option_a", rtype=str)
+    TIMEOUT = Option("timeout", rtype=float)
 ```
 Please note, that using `@optionGroup` with prefixes in these situations is crucial. If no prefix is specified, this would basically mean creating 2 options with same names, which will lead to undefined behavior.
+
+# InDev features
+
+Tracked in more detail in [`todo.md`](todo.md).
