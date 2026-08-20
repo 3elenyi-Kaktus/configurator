@@ -13,6 +13,8 @@ from kaktus.configurator.graph import DAG
 if TYPE_CHECKING:
     from kaktus.configurator.option import Option
 
+log: logging.Logger = logging.getLogger(__name__)
+
 
 class Depends:
     def __init__(self, *args: Option):
@@ -76,7 +78,7 @@ class DependenciesResolver:
     ) -> None:
         for option in options:
             dependencies: DependencyGroup = graph.getDescendants(option)
-            logging.info(f"Dependencies for option {option} local graph: {dependencies}")
+            log.info(f"Dependencies for option {option} local graph: {dependencies}")
 
             # Ugly, but I don't know a better way to do this
             for exclusive_group_rule in exclusive_group_rules:
@@ -93,20 +95,20 @@ class DependenciesResolver:
     def createEdgeCombinations(option_raw_dependencies: dict[OptionName, Depends | None]) -> list[list[Edge]]:
         edge_combinations: list[list[Edge]] = [[]]
         for option_name, raw_dependencies in option_raw_dependencies.items():
-            logging.info(f"Adding option {option_name}")
+            log.info(f"Adding option {option_name}")
             if raw_dependencies is None:
-                logging.info("No deps")
+                log.info("No deps")
                 continue
-            logging.info(f"Dependencies: {raw_dependencies.groups}")
+            log.info(f"Dependencies: {raw_dependencies.groups}")
             res = []
-            logging.info("Many group")
+            log.info("Many group")
             for group in raw_dependencies.groups:
                 current = []
                 for combination in edge_combinations:
                     current.append([*combination, *[(option_name, x) for x in group]])
                 res.extend(current)
             edge_combinations = res
-            logging.info(edge_combinations)
+            log.info(edge_combinations)
         return edge_combinations
 
     def buildGraph(self, options: list[OptionName], relations: list[Edge]) -> DAG[OptionName]:
@@ -118,7 +120,7 @@ class DependenciesResolver:
                 graph.addEdge(start, end)
             except RuntimeError as exc:
                 if self.images_dirpath is None:
-                    logging.warning("Option graphs dirpath is not set. You should do it to get a visual reference")
+                    log.warning("Option graphs dirpath is not set. You should do it to get a visual reference")
                 else:
                     graph.save(self.images_dirpath)
                 raise RuntimeError("Failed to build the graph") from exc
@@ -129,6 +131,6 @@ class DependenciesResolver:
         dependencies: list[DependencyGroup] = []
         for graph in self.graphs:
             dependencies.append(graph.getDescendants(option_name))
-        logging.info(f"Deps for {option_name}: {dependencies}")
-        logging.info("\n\n")
+        log.info(f"Deps for {option_name}: {dependencies}")
+        log.info("\n\n")
         return dependencies

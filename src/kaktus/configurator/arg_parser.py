@@ -11,6 +11,9 @@ from kaktus.configurator.option import _MISSING, _Missing
 from kaktus.configurator.sys_options import SystemOption
 
 
+log: logging.Logger = logging.getLogger(__name__)
+
+
 class SuppressingParser(ArgumentParser):
     @override
     def add_argument(self, *name_or_flags: str, **kw: Any) -> Action:
@@ -48,7 +51,7 @@ class IArgParser:
     def parseArgs(self) -> None:
         args_namespace: argparse.Namespace = self.parser.parse_args()
         self.args = vars(args_namespace)
-        logging.info(f"Parsed args: {toReadableJSON(self.args)}")
+        log.info(f"Parsed args: {toReadableJSON(self.args)}")
 
     def getArgs(self) -> dict[str, Any]:
         if not self.args:

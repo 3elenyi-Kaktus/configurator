@@ -29,6 +29,8 @@ from kaktus.configurator.rules import DependenciesResolver, DependencyGroup, Dep
 from kaktus.configurator.sys_options import SystemOption
 
 
+log: logging.Logger = logging.getLogger(__name__)
+
 ReloadCallback: TypeAlias = Callable[..., None]
 Properties: TypeAlias = list[property]
 
@@ -141,10 +143,10 @@ class IConfig:
         return file_args
 
     def _validateOptionNames(self, args: dict[str, Any]) -> None:
-        logging.debug("Config: Validating option names")
+        log.debug("Config: Validating option names")
         # All options must be from registered ones
         allowed_options: set[str] = set(self.registered_options.keys())
-        logging.debug(f"Config: Allowed options: '{allowed_options}'")
+        log.debug(f"Config: Allowed options: '{allowed_options}'")
 
         parsed_arg_names: set[str] = set(args.keys())
         if diff := parsed_arg_names.difference(allowed_options):
@@ -164,7 +166,7 @@ class IConfig:
             for option_group, group_enabled in zip(exclusive_group_rule, group_defined, strict=True):
                 if group_enabled:
                     continue
-                logging.info(
+                log.info(
                     f"Config: Group {option_group} was detected as non-defined, setting its options `required` flag to False"
                 )
                 for option_name in option_group:
@@ -190,7 +192,7 @@ class IConfig:
 
     def _flattenArguments(self, args: dict[str, Any]) -> dict[str, Any]:
         for group in sorted(self.option_groups, key=lambda x: len(x._prefix_path), reverse=True):
-            logging.info(f"Config: Flattening {group._prefix_path}")
+            log.info(f"Config: Flattening {group._prefix_path}")
             if not group._prefix_path:
                 continue
             current_args: dict[str, Any] = args
@@ -198,15 +200,15 @@ class IConfig:
                 if entry not in current_args:
                     raise RuntimeError(f"Config: Expected key {entry}, but none was found")
                 current_args = current_args[entry]
-            logging.info(f"Config: Start {toReadableJSON(current_args)}")
+            log.info(f"Config: Start {toReadableJSON(current_args)}")
             option_prefix = ""
             if group._real:
                 option_prefix = f"{group._prefix_path[-1]}_"
             for key, value in current_args.get(group._prefix_path[-1], {}).items():
                 current_args[option_prefix + key] = value
             current_args.pop(group._prefix_path[-1], None)
-            logging.info(f"Config: Got {toReadableJSON(current_args)}")
-            logging.info(f"Config: Flattened {toReadableJSON(args)}")
+            log.info(f"Config: Got {toReadableJSON(current_args)}")
+            log.info(f"Config: Flattened {toReadableJSON(args)}")
         return args
 
     def _recreate(self) -> None:
@@ -241,7 +243,7 @@ class IConfig:
             ("File args", file_args.get(SystemOption.ENV_FILEPATH.name, None)),
             ("CMD args", cmd_args.get(SystemOption.ENV_FILEPATH.name)),
         ]:
-            logging.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
+            log.info(f"Config: Trying to load .env file from '{env_filepath}' (acquired from: {source})")
             if env_filepath is None:
                 continue
             variables: dict[str, Any] | None = EnvParser.parseFile(Path(env_filepath))
@@ -263,7 +265,7 @@ class IConfig:
 
         # At this point we performed all possible checks on arguments as is.
         # We can move their values to the corresponding options.
-        logging.info(f"Config: Collected arguments: {toReadableJSON(args)}")
+        log.info(f"Config: Collected arguments: {toReadableJSON(args)}")
         options: dict[OptionName, Option] = {key: copy(value) for key, value in self.registered_options.items()}
         for arg_name, value in args.items():
             options[arg_name].raw_value = value
@@ -304,7 +306,7 @@ class IConfig:
             raise InvalidOptionValue("Failed to validate config options") from exc
 
         # We successfully validated all options without errors and can save them
-        logging.info(f"Config: Converted to options: {toReadableJSON(options)}")
+        log.info(f"Config: Converted to options: {toReadableJSON(options)}")
         self.options = options
 
     def _readProp(self, prop: property) -> Any:
@@ -314,9 +316,9 @@ class IConfig:
         return getter(self)
 
     def _onReload(self) -> None:
-        logging.info("Config: Reload requested")
+        log.info("Config: Reload requested")
         with self.reload_lock:
-            logging.info("Config: Reload lock acquired, starting reload")
+            log.info("Config: Reload lock acquired, starting reload")
             # Load all current values of properties
             for prop in self.properties:
                 self.old_values[prop] = self._readProp(prop)
@@ -324,18 +326,18 @@ class IConfig:
                 # Reread arguments
                 self._recreate()
             except Exception as exc:
-                logging.exception(exc)
-                logging.error("Config: Reload failed, keeping old configuration")
+                log.exception(exc)
+                log.error("Config: Reload failed, keeping old configuration")
                 return
 
             # Reload necessary classes based on changed props and registered reload callbacks
             for prop in self.properties:
                 if self.old_values[prop] != self._readProp(prop):
                     prop_name: str = getattr(prop.fget, "__name__", "<property>")
-                    logging.info(
+                    log.info(
                         f"Config: Property {prop_name} was changed: {self.old_values[prop]} -> {self._readProp(prop)}"
                     )
-            logging.info("Config: Reloaded config successfully, propagating changes to dependants")
+            log.info("Config: Reloaded config successfully, propagating changes to dependants")
             for callback, triggered_on in self.on_reload_triggers.items():
                 args: list[Any] = []
                 needs_reloading: bool = False
@@ -349,9 +351,9 @@ class IConfig:
                 try:
                     callback(*args)
                 except Exception as exc:
-                    logging.exception(exc)
-                    logging.error(f"Config: Reloading trigger {callback} failed")
-            logging.info("Config: Reload completed")
+                    log.exception(exc)
+                    log.error(f"Config: Reloading trigger {callback} failed")
+            log.info("Config: Reload completed")
 
     @staticmethod
     def _checkForMissing(options: dict[OptionName, Option]) -> None:
@@ -364,7 +366,7 @@ class IConfig:
 
         # Just a fair warning, that some optional args weren't set
         if diff := all_options.difference(set_options):
-            logging.warning(f"Config: Options '{diff}' are omitted")
+            log.warning(f"Config: Options '{diff}' are omitted")
 
     @staticmethod
     def _validateOptions(options: dict[OptionName, Option]) -> None:
@@ -387,14 +389,14 @@ class IConfig:
             if value is not None or value is None and key not in base_args.keys():
                 overridden_keys[key] = value
                 base_args[key] = value
-        logging.info(f"Overridden config keys: {toReadableJSON(overridden_keys)}")
+        log.info(f"Overridden config keys: {toReadableJSON(overridden_keys)}")
         return base_args
 
     def _getOptionValue(self, option: Option) -> Any:
         return self.options[option.name].value
 
     def _setOptionValue(self, option_group: type[OptionGroup], option: Option, new_value: Any) -> None:
-        logging.info(f"Config: Changing option '{option.name}' (from group: {option_group}) to: {new_value}")
+        log.info(f"Config: Changing option '{option.name}' (from group: {option_group}) to: {new_value}")
         path = option_group._prefix_path
         config_json: dict[str, Any] = self._readConfigFile(self.config_fpath)
 
@@ -403,9 +405,9 @@ class IConfig:
             current_config = current_config[name]
 
         option_name_prefix: str = "_".join(option_group._real_prefix_path) + "_"
-        logging.info(f"Config: Option name prefix: '{option_name_prefix}'")
+        log.info(f"Config: Option name prefix: '{option_name_prefix}'")
         current_config[option.name.removeprefix(option_name_prefix)] = new_value
-        logging.info(toReadableJSON(config_json))
+        log.info(toReadableJSON(config_json))
         writeJSON(self.config_fpath, config_json)
 
     def enableHotReload(self) -> None:

@@ -5,6 +5,8 @@ from typing import Generic, TypeVar
 from uuid import uuid4
 
 
+log: logging.Logger = logging.getLogger(__name__)
+
 T = TypeVar("T", bound=Hashable)
 
 
@@ -93,5 +95,5 @@ class DAG(Generic[T]):
             fname = f"{uuid4()}.png"
         fpath: Path = dirpath / fname
         graph.draw(fpath)
-        logging.info(f"Saved graph image to '{fpath}'")
+        log.info(f"Saved graph image to '{fpath}'")
         return fpath

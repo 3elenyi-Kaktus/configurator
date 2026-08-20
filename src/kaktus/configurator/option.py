@@ -11,6 +11,9 @@ from kaktus.configurator.commons import OptionName
 from kaktus.configurator.rules import Depends
 
 
+log: logging.Logger = logging.getLogger(__name__)
+
+
 class _NotSet:
     def __json__(self) -> str:
         return "_NOTSET"
@@ -77,14 +80,14 @@ class Option:
         if len(input_parameters) == 0:
             raise RuntimeError(f"Validator callable must have at least one parameter in option '{self.name}'")
         input_annotation: Any = input_parameters[0].annotation
-        logging.info(f"Option: Retrieved validator callable input argument type: {input_annotation}")
+        log.info(f"Option: Retrieved validator callable input argument type: {input_annotation}")
 
         return_annotation: Any
         if inspect.isclass(self.validator):
             return_annotation = self.validator
         else:
             return_annotation = sign.return_annotation
-        logging.info(f"Option: Retrieved validator callable return type: {sign.return_annotation}")
+        log.info(f"Option: Retrieved validator callable return type: {sign.return_annotation}")
 
         # Check if it's needed to infer types from existing option validator.
         if in_type is not None and rtype is not None:
@@ -92,11 +95,11 @@ class Option:
             # We guarantee only that the argument of an asked type will be provided into user's validator function.
             # Make a simple equality check and warn user (even though it's not our problem).
             if in_type != input_annotation:
-                logging.warning(
+                log.warning(
                     f"Input type of option '{self.name}' is mismatched with the validator: {in_type} != {input_annotation}"
                 )
             if rtype != return_annotation:
-                logging.warning(
+                log.warning(
                     f"Option type of option '{self.name}' is mismatched with the validator: {rtype} != {return_annotation}"
                 )
             return in_type, rtype
