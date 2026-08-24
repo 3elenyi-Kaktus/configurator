@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import IntEnum
 from types import UnionType
 from typing import Annotated, Any, TypeAlias, Union, get_args, get_origin
 
@@ -7,6 +8,12 @@ from typing_extensions import TypeAliasType
 
 
 OptionName: TypeAlias = str
+
+
+class AccessZone(IntEnum):
+    NOTSET = -1
+    ADMIN = 0
+    DEV = 1
 
 
 def toNonGenericType(tp: Any) -> Any:

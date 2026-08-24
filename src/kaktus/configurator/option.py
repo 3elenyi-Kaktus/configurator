@@ -7,7 +7,7 @@ import logging
 from types import GenericAlias, UnionType
 from typing import Any, TypeAlias
 
-from kaktus.configurator.commons import OptionName
+from kaktus.configurator.commons import AccessZone, OptionName
 from kaktus.configurator.rules import Depends
 
 
@@ -44,13 +44,18 @@ class Option:
         required: bool = True,
         dependencies: Depends | None = None,
         default: Any = _NOTSET,
+        accessible_from: AccessZone = AccessZone.NOTSET,
     ):
         self.name: OptionName = name
         self.validator: Validator = (lambda x: x) if validator is None else validator
         self.required: bool = required
         self.dependencies: Depends | None = dependencies
         self.default: Any = default
+        self.accessible_from: AccessZone = accessible_from
 
+        # The option default access zone is managed by its option group and will be set later by it
+        self.zone: AccessZone = AccessZone.NOTSET
+        self.source_zone: AccessZone | None = None
         self.raw_value: Any = _MISSING
         self.value: Any = None
 
@@ -118,6 +123,10 @@ class Option:
             rtype = return_annotation
         return in_type, rtype
 
+    def isAccessibleFrom(self, zone: AccessZone) -> bool:
+        floor: AccessZone = AccessZone.DEV if self.accessible_from is AccessZone.NOTSET else self.accessible_from
+        return zone >= floor
+
     def __json__(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -127,4 +136,5 @@ class Option:
             "default": str(self.default),
             "raw_value": self.raw_value,
             "value": self.value,
+            "zone": self.accessible_from.name,
         }

@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from kaktus.configurator.commons import AccessZone
 from kaktus.configurator.option import Option
-from kaktus.configurator.option_group import OptionGroup
+from kaktus.configurator.option_group import OptionGroup, optionGroup
 from kaktus.configurator.validators import PathTarget, pathValidator
 
 
+@optionGroup(zone=AccessZone.ADMIN)
 class SystemOption(OptionGroup):
     CONFIG_FILEPATH = Option(
         "config_filepath",
@@ -22,5 +24,14 @@ class SystemOption(OptionGroup):
         "option_graphs_dirpath",
         in_type=str,
         validator=pathValidator(),
+        required=False,
+    )
+
+
+@optionGroup(zone=AccessZone.ADMIN)
+class AdminOption(OptionGroup):
+    DEV_PRESET = Option(
+        "dev_preset",
+        rtype=str,
         required=False,
     )

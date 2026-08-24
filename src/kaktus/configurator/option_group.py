@@ -5,6 +5,7 @@ from inspect import signature
 import logging
 from typing import Any
 
+from kaktus.configurator.commons import AccessZone
 from kaktus.configurator.option import Option
 
 
@@ -62,14 +63,7 @@ class OptionGroup:
         log.info("Completed subclass mangling")
 
 
-def _preprocessOptionGroup(
-    cls: type[OptionGroup], parent: type[OptionGroup], prefix: str, real: bool
-) -> type[OptionGroup]:
-    log.info(f"Preprocessing option group: '{cls.__name__}'")
-    if not issubclass(cls, OptionGroup):
-        raise RuntimeError(f"'{cls.__name__}' is not a subclass of OptionGroup")
-    log.info(f"Attributes (in): {cls.__dict__}")
-
+def _addPrefix(cls: type[OptionGroup], parent: type[OptionGroup], prefix: str, real: bool) -> type[OptionGroup]:
     log.info(f"Adding prefix '{prefix}' to parent ('{parent.__name__}') paths as {'real' if real else 'virtual'} part")
     cls._prefix = prefix
     cls._real = real
@@ -95,20 +89,47 @@ def _preprocessOptionGroup(
     return cls
 
 
+def _preprocessOptionGroup(
+    cls: type[OptionGroup], parent: type[OptionGroup], prefix: str | None, real: bool, zone: AccessZone
+) -> type[OptionGroup]:
+    log.info(f"Preprocessing option group: '{cls.__name__}'")
+    if not issubclass(cls, OptionGroup):
+        raise TypeError(f"'{cls.__name__}' is not a subclass of OptionGroup")
+    log.info(f"Attributes (in): {cls.__dict__}")
+
+    if prefix is not None:
+        cls = _addPrefix(cls, parent, prefix, real)
+
+    for option in cls.getOptions():
+        option.zone = zone
+        if option.accessible_from is AccessZone.NOTSET:
+            option.accessible_from = zone
+        elif option.zone < option.accessible_from:
+            raise RuntimeError(
+                f"Option '{option.name}' is misplaced: accessible to zone '{option.accessible_from.name}', but placed in group with access zone '{zone.name}'"
+            )
+
+    log.info(f"Attributes (out): {cls.__dict__}")
+    return cls
+
+
+# Inheriting OptionGroup (or its subclass) should be used only to get the same options
+# inside new group without copy-pasting them across option groups. However, this leads
+# to option name overlapping, which is prohibited. The optionGroup decorator prefixes
+# the option names so that this collision is resolved. So by design calling the decorator
+# without prefix is useless, therefore this form is not supported.
+
+
 def optionGroup(
-    cls: type[OptionGroup] | None = None,
+    _: None = None,
     /,
     *,
     parent: type[OptionGroup] = OptionGroup,
-    prefix: str,
+    prefix: str | None = None,
     real: bool = True,
-) -> Callable[..., Any] | type[OptionGroup]:
-    def wrapper(cls_: type[OptionGroup]) -> type[OptionGroup]:
-        return _preprocessOptionGroup(cls_, parent, prefix, real)
+    zone: AccessZone = AccessZone.DEV,
+) -> Callable[[type[OptionGroup]], type[OptionGroup]]:
+    def wrapper(cls: type[OptionGroup]) -> type[OptionGroup]:
+        return _preprocessOptionGroup(cls, parent, prefix, real, zone)
 
-    if cls is None:
-        # Called with parentheses
-        return wrapper
-
-    # Called without parentheses
-    return wrapper(cls)
+    return wrapper

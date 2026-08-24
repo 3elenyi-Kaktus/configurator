@@ -8,7 +8,7 @@ from kaktus.json_helpers.helpers import toReadableJSON
 from typing_extensions import override
 
 from kaktus.configurator.option import _MISSING, _Missing
-from kaktus.configurator.sys_options import SystemOption
+from kaktus.configurator.sys_options import AdminOption, SystemOption
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -46,6 +46,12 @@ class IArgParser:
             help="Path to directory for outputting option graphs",
             dest=SystemOption.OPTION_GRAPHS_DIRPATH.name,
         )
+        self.parser.add_argument(
+            "--dev-preset",
+            required=False,
+            help="Preset ID of developer settings",
+            dest=AdminOption.DEV_PRESET.name,
+        )
         self.args: dict[str, Any] = {}
 
     def parseArgs(self) -> None:
@@ -69,6 +75,16 @@ class IArgParser:
     def getOptionGraphsDirpath(self) -> Path | None:
         arg: str | _Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
         return Path(arg) if not isinstance(arg, _Missing) else None
+
+    @property
+    def env_filepath(self) -> Path | None:
+        arg: str | _Missing = self.getArg(SystemOption.ENV_FILEPATH.name)
+        return Path(arg) if not isinstance(arg, _Missing) else None
+
+    @property
+    def dev_preset(self) -> str | None:
+        arg: str | _Missing = self.getArg(AdminOption.DEV_PRESET.name)
+        return arg if not isinstance(arg, _Missing) else None
 
     @staticmethod
     def __json__() -> dict[str, str]:
