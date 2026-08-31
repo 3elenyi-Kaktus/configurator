@@ -52,6 +52,13 @@ class IArgParser:
             help="Preset ID of developer settings",
             dest=AdminOption.DEV_PRESET.name,
         )
+        self.parser.add_argument(
+            "--enable-hot-reload",
+            required=False,
+            action="store_true",
+            help="Enable hot reloading of config files at runtime",
+            dest=SystemOption.ENABLE_HOT_RELOAD.name,
+        )
         self.args: dict[str, Any] = {}
 
     def parseArgs(self) -> None:

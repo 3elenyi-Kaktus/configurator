@@ -79,6 +79,7 @@ class ConfigLayer:
         if name in {
             SystemOption.CONFIG_FILEPATH.name,
             SystemOption.OPTION_GRAPHS_DIRPATH.name,
+            SystemOption.ENABLE_HOT_RELOAD.name,
             AdminOption.DEV_PRESET.name,
         }:
             return self.zone is AccessZone.ADMIN
@@ -519,7 +520,9 @@ class IConfig:
                 except Exception as exc:
                     log.exception(exc)
                     log.error(f"Config: Reloading trigger {callback} failed")
-            if self.change_pollers and set(self.layer_files.values()) != previous_files:
+            if not self.enable_hot_reload:
+                self._stopHotReloadPollers()
+            elif self.change_pollers and set(self.layer_files.values()) != previous_files:
                 self._restartHotReloadPollers()
             log.info("Config: Reload completed")
 
@@ -585,32 +588,36 @@ class IConfig:
             files = [self.config_fpath]
         return files
 
-    def _restartHotReloadPollers(self) -> None:
+    def _stopHotReloadPollers(self) -> None:
         for poller in self.change_pollers:
             poller.stopPolling()
         self.change_pollers = []
+
+    def _startHotReloadPollers(self) -> None:
         for fpath in self._watchedFiles():
             poller = ChangePoller(fpath, self._onReload)
             poller.startPolling()
             self.change_pollers.append(poller)
 
+    def _restartHotReloadPollers(self) -> None:
+        self._stopHotReloadPollers()
+        self._startHotReloadPollers()
+
     def enableHotReload(self) -> None:
+        if not self.enable_hot_reload:
+            log.warning("Config: Skipping hot reload because 'enable_hot_reload' is false")
+            return
         if self.change_pollers:
             self._restartHotReloadPollers()
             return
-        for fpath in self._watchedFiles():
-            poller = ChangePoller(fpath, self._onReload)
-            poller.startPolling()
-            self.change_pollers.append(poller)
+        self._startHotReloadPollers()
 
     def addReloadCallback(self, callback: ReloadCallback, triggered_on: Properties) -> None:
         with self.reload_lock:
             self.on_reload_triggers[callback] = triggered_on
 
     def atExit(self) -> None:
-        for poller in self.change_pollers:
-            poller.stopPolling()
-        self.change_pollers = []
+        self._stopHotReloadPollers()
 
     @property
     def config_filepath(self) -> Path:
@@ -623,3 +630,7 @@ class IConfig:
     @property
     def option_graphs_dirpath(self) -> Path | None:
         return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)  # type: ignore[no-any-return]
+
+    @property
+    def enable_hot_reload(self) -> bool:
+        return self._getOptionValue(SystemOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]

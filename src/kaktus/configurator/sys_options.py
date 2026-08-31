@@ -26,6 +26,12 @@ class SystemOption(OptionGroup):
         validator=pathValidator(),
         required=False,
     )
+    ENABLE_HOT_RELOAD = Option(
+        "enable_hot_reload",
+        rtype=bool,
+        required=False,
+        default=False,
+    )
 
 
 @optionGroup(zone=AccessZone.ADMIN)
