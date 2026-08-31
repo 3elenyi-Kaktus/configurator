@@ -9,7 +9,19 @@ from kaktus.configurator.option_group import OptionGroup, optionGroup
 from kaktus.configurator.rules import Depends
 
 
-logging.getLogger(__name__).addHandler(logging.NullHandler())
+_log = logging.getLogger(__name__)
+_log.addHandler(logging.NullHandler())
+_log.setLevel(logging.WARNING)
+
+
+def setLogLevel(level: int | str) -> None:
+    if isinstance(level, str):
+        resolved = logging.getLevelName(level.upper())
+        if not isinstance(resolved, int):
+            raise ValueError(f"Unknown log level: {level}")
+        level = resolved
+    _log.setLevel(level)
+
 
 __all__ = [
     "__version__",
@@ -20,4 +32,5 @@ __all__ = [
     "IConfig",
     "IArgParser",
     "Depends",
+    "setLogLevel",
 ]
