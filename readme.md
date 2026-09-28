@@ -35,9 +35,6 @@ Create an empty `settings/` directory (with `__init__.py` file if needed) in a u
         ├── configs
         │   ├── default.json
         │   └── test.json
-        ├── envs
-        │   ├── .env
-        │   └── test.env
         ├── __init__.py
         ├── arg_parser.py
         ├── config.py
@@ -94,7 +91,7 @@ Its instance holds all information about the option:
 
   A dependency ruleset, refer to the [Dependencies](#dependencies-1) section for more information.
 
-By default, configurator will check that all registered options are present in loaded config in any way: via config file, command line or `.env` file. If any of the options was not found, or if configurator found an unregistered option, it will fail the process.
+By default, configurator will check that all registered options are present in loaded config in any way: via config file or command line. If any of the options was not found, or if configurator found an unregistered option, it will fail the process.
 
 Configurator needs option input type (which is retrieved from config file or other sources) and final option value (to correctly auto-generate proxy files). These types can be inferred automatically from the `validator` function, if it's a typed one. Otherwise (`validator` isn't a typed one, or you want to narrow down the types, if the `validator` ones are too broad for this exact case), you have to specify the types manually. Both `in_type`/`rtype` have higher precedence over the `validator` types. In the case when there is no `validator` function defined at all, you can omit the `in_type` and use only the `rtype` parameter (since raw values will be simply forwarded through and types won't change at all).
 
@@ -217,11 +214,6 @@ As was stated before, some options are already defined at library level. These a
     Config name: `"config_filepath"`
 
     CMD name: `-p` (short for `--config-filepath`)
-* Optional path to `.env` file with analogical purposes.
-
-    Config name: `"env_filepath"`
-
-    CMD name: `--env-filepath`
 * Optional path to the directory, where option dependency graph images will be dumped.
 
     Config name: `"option_graphs_dirpath"`
@@ -232,34 +224,9 @@ Technically, path to config file is a required option. But since it can only eff
 
 
 
-### `.env` files
-Strictly speaking, config file and `.env` file hold the exactly same purpose. But, they differ in some ways:
-- `.env` files (for now) support only `int` and `str` types [TODO](#indev-features).
-- Option names in `.env` files should be written in uppercase, instead of lowercase.
-
-`.env` file functionality is added for security reasons: holding sensitive information, such as passwords, which mustn't be published in open sources.
-
-To specify whether value is a `str` or `int`, wrap it in single or double quotes for `str`, otherwise, value is considered to be an `int`.
-
-Typical file will look like:
-```dotenv
-# Postgres connector
-POSTGRES_USER='my_user'
-POSTGRES_PASSWORD='my_password'
-POSTGRES_HOST='127.0.0.1'
-POSTGRES_PORT=5432
-```
-
-You can define path to `.env` file either in config file, using the `"env_filepath"` system option, or passing it via CMD args with `--env-filepath`.
-
-#### Important note
-`.env` files are parsed with a custom parser, which won't add these variables to the environment, only to the config class. On the other hand, creating environment with these variables in it won't impact the program, since we don't read any environment at all. Therefore, its `.env` name is only for hinting that these options are private ones and shouldn't be saved in a repository or anywhere else.
-
-
-
 ### Option source priorities
 Option sources have a strict priority over each one:
-$$CMD\ options \gt File\ options \gt\ .env\ options$$
+$$CMD\ options \gt File\ options$$
 If any of options is redeclared in another source, only value from the one with the highest source priority will be used.
 
 ### Usage

@@ -21,6 +21,7 @@ requires-python = ">=3.10"
 dependencies = [
     "kaktus-json-helpers>=4.0.2",
     "ruff>=0.16.0",
+    "tomli>=2.4.0",
     "typing-extensions>=4.15.0",
     "watchdog>=6.0.0",
 ]

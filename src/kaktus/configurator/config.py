@@ -1,8 +1,6 @@
 from collections.abc import Callable
 from copy import copy
 import hashlib
-import json
-from json import JSONDecodeError
 import logging
 from pathlib import Path
 import re
@@ -14,7 +12,7 @@ from kaktus.json_helpers.helpers import toReadableJSON, writeJSON
 from kaktus.configurator.arg_parser import IArgParser
 from kaktus.configurator.change_poller import ChangePoller
 from kaktus.configurator.commons import AccessZone, OptionName, toNonGenericType
-from kaktus.configurator.env_parser import EnvParser
+from kaktus.configurator.config_reader import ConfigDecodeError, UnsupportedConfigFormat, configReader
 from kaktus.configurator.errors import (
     DependencyViolation,
     ExclusiveGroupViolation,
@@ -27,7 +25,7 @@ from kaktus.configurator.errors import (
 from kaktus.configurator.option import _MISSING, Option
 from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
-from kaktus.configurator.sys_options import AdminOption, SystemOption
+from kaktus.configurator.sys_options import AdminOption, DevOption, SystemOption
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -39,15 +37,15 @@ _PRESET_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _DEV_SUBDIR = "dev"
 
 
-def _readConfigFile(fpath: Path) -> dict[str, Any]:
+def _readConfigFile(fpath: Path) -> Any:
     try:
-        with open(fpath) as config_file:
-            file_args: dict[str, Any] = json.load(config_file)
+        return configReader.readFile(fpath)
     except OSError as exc:
         raise RuntimeError("Failed to read config file") from exc
-    except JSONDecodeError as exc:
-        raise RuntimeError("File contents aren't a valid JSON") from exc
-    return file_args
+    except ConfigDecodeError as exc:
+        raise RuntimeError("File contents aren't a valid config document") from exc
+    except UnsupportedConfigFormat as exc:
+        raise RuntimeError(f"Unsupported config file format: '{fpath.suffix}'") from exc
 
 
 class ConfigLayer:
@@ -74,12 +72,9 @@ class ConfigLayer:
         if self.allow_all:
             return True
         name = option.name
-        if name == SystemOption.ENV_FILEPATH.name:
-            return True
         if name in {
             SystemOption.CONFIG_FILEPATH.name,
             SystemOption.OPTION_GRAPHS_DIRPATH.name,
-            SystemOption.ENABLE_HOT_RELOAD.name,
             AdminOption.DEV_PRESET.name,
         }:
             return self.zone is AccessZone.ADMIN
@@ -131,17 +126,7 @@ class ConfigLayer:
             log.info(f"Config: Flattened {toReadableJSON(args)}")
         return args
 
-    @staticmethod
-    def _overrideArgs(base_args: dict[str, Any], new_args: dict[str, Any]) -> dict[str, Any]:
-        overridden_keys = {}
-        for key, value in new_args.items():
-            if value is not None or value is None and key not in base_args.keys():
-                overridden_keys[key] = value
-                base_args[key] = value
-        log.info(f"Overridden config keys: {toReadableJSON(overridden_keys)}")
-        return base_args
-
-    def collectPresentArgs(self, config_fpath: Path, env_path_override: str | None = None) -> dict[str, Any]:
+    def collectPresentArgs(self, config_fpath: Path) -> dict[str, Any]:
         # Load args from config file
         try:
             file_args: dict[str, Any] = _readConfigFile(config_fpath)
@@ -149,7 +134,7 @@ class ConfigLayer:
             raise InvalidConfig(f"Failed to load config file from '{config_fpath}'") from exc
 
         if not isinstance(file_args, dict):
-            raise InvalidConfig("Config file must contain a JSON dictionary")
+            raise InvalidConfig("Config file must contain a dictionary")
 
         # Flatten config dictionary
         try:
@@ -157,34 +142,18 @@ class ConfigLayer:
         except RuntimeError as exc:
             raise InvalidConfig("Couldn't flatten config file") from exc
 
-        # Load env variables from file, if possible.
-        env_vars: dict[str, Any] = {}
-        env_fpath_raw: Any = (
-            env_path_override if env_path_override is not None else file_args.get(SystemOption.ENV_FILEPATH.name)
-        )
-        if env_fpath_raw is not None:
-            log.info(f"Config: Trying to load .env file from '{env_fpath_raw}'")
-            variables: dict[str, Any] | None = EnvParser.parseFile(Path(str(env_fpath_raw)))
-            if variables is not None:
-                env_vars = variables
-
-        # All available arguments are acquired.
-        # Resolve their precedence in following order: env variables > file args.
-        args: dict[str, Any] = self._overrideArgs(file_args, env_vars)
-
         # Check for any excessive options
         try:
-            self._checkExcessiveOptionNames(args, set(self.registered_options.keys()))
+            self._checkExcessiveOptionNames(file_args, set(self.registered_options.keys()))
         except Exception as exc:
             raise InvalidOptionName("Failed to validate option names") from exc
 
-        # At this point we performed all possible checks on arguments as is.
-        log.info(f"Config: Collected arguments: {toReadableJSON(args)}")
-        return args
+        log.info(f"Config: Collected arguments: {toReadableJSON(file_args)}")
+        return file_args
 
 
 def _SystemOptionGroups() -> list[type[OptionGroup]]:
-    return [SystemOption, AdminOption]
+    return [SystemOption, AdminOption, DevOption]
 
 
 class IConfig:
@@ -235,8 +204,9 @@ class IConfig:
 
         if not self.config_fpath.is_file():
             raise InvalidConfig(f"Config file at '{self.config_fpath}' doesn't exist or isn't a file")
-        if self.config_fpath.suffix != ".json":
-            raise InvalidConfig(f"Specified file is not a JSON file: '{self.config_fpath}'")
+        if not configReader.supports(self.config_fpath):
+            supported = ", ".join(configReader.suffixes())
+            raise InvalidConfig(f"Unsupported config file format '{self.config_fpath.suffix}' (supported: {supported})")
 
     @staticmethod
     def getOptionGroupsHash(option_groups: list[type[OptionGroup]]) -> str:
@@ -332,10 +302,15 @@ class IConfig:
     def _resolveCatalogFile(self, subdir: str, preset_id: str, kind: str) -> Path:
         if _PRESET_ID_PATTERN.fullmatch(preset_id) is None:
             raise InvalidConfig(f"Invalid {kind.capitalize()} preset id: {preset_id}")
-        fpath: Path = self.root_dirpath / subdir / f"{preset_id}.json"
-        if not fpath.is_file():
-            raise InvalidConfig(f"{kind.capitalize()} preset '{preset_id}' was not found at '{fpath}'")
-        return fpath
+        candidates = [self.root_dirpath / subdir / f"{preset_id}{suffix}" for suffix in configReader.suffixes()]
+        found = [path for path in candidates if path.is_file()]
+        if not found:
+            looked_up = ", ".join(str(path) for path in candidates)
+            raise InvalidConfig(f"{kind.capitalize()} preset '{preset_id}' was not found at {looked_up}")
+        if len(found) > 1:
+            matched = ", ".join(str(path) for path in found)
+            raise InvalidConfig(f"{kind.capitalize()} preset '{preset_id}' matches multiple files: {matched}")
+        return found[0]
 
     def _makeLayer(self, zone: AccessZone, *, allow_all: bool, strict_flatten: bool) -> ConfigLayer:
         return ConfigLayer(
@@ -347,10 +322,7 @@ class IConfig:
         )
 
     def _applyPresentArgs(self, options: dict[OptionName, Option], present: dict[str, Any], zone: AccessZone) -> None:
-        applied = dict(present)
-        if zone is not AccessZone.ADMIN:
-            applied.pop(SystemOption.ENV_FILEPATH.name, None)
-        for arg_name, value in applied.items():
+        for arg_name, value in present.items():
             option = options[arg_name]
             option.raw_value = value
             option.source_zone = zone
@@ -371,20 +343,8 @@ class IConfig:
         except RuntimeError as exc:
             raise InvalidConfig(f"Failed to load config file from '{self.config_fpath}'") from exc
         if not isinstance(raw_admin, dict):
-            raise InvalidConfig("Config file must contain a JSON dictionary")
-        dev_preset_id = raw_admin.get(AdminOption.DEV_PRESET.name)
-        if dev_preset_id is not None:
-            return False
-
-        env_fpath: Path | None = raw_admin.get(SystemOption.ENV_FILEPATH.name)
-        if env_fpath is None:
-            if self.arg_parser is None or self.arg_parser.env_filepath is None:
-                return True
-            env_fpath = self.arg_parser.env_filepath
-        parsed_env = EnvParser.parseFile(Path(str(env_fpath)))
-        if parsed_env is not None:
-            dev_preset_id = parsed_env.get(AdminOption.DEV_PRESET.name)
-        return dev_preset_id is None
+            raise InvalidConfig("Config file must contain a dictionary")
+        return raw_admin.get(AdminOption.DEV_PRESET.name) is None
 
     def loadOptions(self) -> dict[OptionName, Option]:
         cmd_args: dict[str, Any]
@@ -399,16 +359,13 @@ class IConfig:
         self.layer_files = {AccessZone.ADMIN: self.config_fpath}
         layer_payloads: list[tuple[AccessZone, dict[str, Any]]] = []
 
-        admin_env_override = self._cmdArg(cmd_args, SystemOption.ENV_FILEPATH.name)
-        admin_env_override_str = str(admin_env_override) if admin_env_override is not None else None
-
         if self._isSingleFile():
             admin_layer = self._makeLayer(AccessZone.ADMIN, allow_all=True, strict_flatten=True)
-            present = admin_layer.collectPresentArgs(self.config_fpath, env_path_override=admin_env_override_str)
+            present = admin_layer.collectPresentArgs(self.config_fpath)
             layer_payloads.append((AccessZone.ADMIN, present))
         else:
             admin_layer = self._makeLayer(AccessZone.ADMIN, allow_all=False, strict_flatten=False)
-            admin_present = admin_layer.collectPresentArgs(self.config_fpath, env_path_override=admin_env_override_str)
+            admin_present = admin_layer.collectPresentArgs(self.config_fpath)
             layer_payloads.append((AccessZone.ADMIN, admin_present))
 
             if self._cmdArg(cmd_args, AdminOption.DEV_PRESET.name) is not None:
@@ -580,6 +537,8 @@ class IConfig:
         log.info(f"Config: Option name prefix: '{option_name_prefix}'")
         current_config[option.name.removeprefix(option_name_prefix)] = new_value
         log.info(toReadableJSON(config_json))
+        if target.suffix.lower() != ".json":
+            raise InvalidConfig(f"Writing option changes is supported only for JSON config files, got '{target}'")
         writeJSON(target, config_json)
 
     def _watchedFiles(self) -> list[Path]:
@@ -624,13 +583,9 @@ class IConfig:
         return self._getOptionValue(SystemOption.CONFIG_FILEPATH)  # type: ignore[no-any-return]
 
     @property
-    def env_filepath(self) -> Path | None:
-        return self._getOptionValue(SystemOption.ENV_FILEPATH)  # type: ignore[no-any-return]
-
-    @property
     def option_graphs_dirpath(self) -> Path | None:
         return self._getOptionValue(SystemOption.OPTION_GRAPHS_DIRPATH)  # type: ignore[no-any-return]
 
     @property
     def enable_hot_reload(self) -> bool:
-        return self._getOptionValue(SystemOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]
+        return self._getOptionValue(DevOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]

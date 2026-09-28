@@ -14,23 +14,11 @@ class SystemOption(OptionGroup):
         rtype=Path,
         validator=pathValidator(target=PathTarget.FILE),
     )
-    ENV_FILEPATH = Option(
-        "env_filepath",
-        in_type=str,
-        validator=pathValidator(target=PathTarget.FILE),
-        required=False,
-    )
     OPTION_GRAPHS_DIRPATH = Option(
         "option_graphs_dirpath",
         in_type=str,
         validator=pathValidator(),
         required=False,
-    )
-    ENABLE_HOT_RELOAD = Option(
-        "enable_hot_reload",
-        rtype=bool,
-        required=False,
-        default=False,
     )
 
 
@@ -40,4 +28,14 @@ class AdminOption(OptionGroup):
         "dev_preset",
         rtype=str,
         required=False,
+    )
+
+
+@optionGroup(zone=AccessZone.DEV)
+class DevOption(OptionGroup):
+    ENABLE_HOT_RELOAD = Option(
+        "enable_hot_reload",
+        rtype=bool,
+        required=False,
+        default=False,
     )

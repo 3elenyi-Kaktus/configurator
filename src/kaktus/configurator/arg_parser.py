@@ -8,7 +8,7 @@ from kaktus.json_helpers.helpers import toReadableJSON
 from typing_extensions import override
 
 from kaktus.configurator.option import _MISSING, _Missing
-from kaktus.configurator.sys_options import AdminOption, SystemOption
+from kaktus.configurator.sys_options import AdminOption, DevOption, SystemOption
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -35,12 +35,6 @@ class IArgParser:
             dest=SystemOption.CONFIG_FILEPATH.name,
         )
         self.parser.add_argument(
-            "--env-filepath",
-            required=False,
-            help="Path to .env file",
-            dest=SystemOption.ENV_FILEPATH.name,
-        )
-        self.parser.add_argument(
             "--option-graphs-dirpath",
             required=False,
             help="Path to directory for outputting option graphs",
@@ -57,7 +51,7 @@ class IArgParser:
             required=False,
             action="store_true",
             help="Enable hot reloading of config files at runtime",
-            dest=SystemOption.ENABLE_HOT_RELOAD.name,
+            dest=DevOption.ENABLE_HOT_RELOAD.name,
         )
         self.args: dict[str, Any] = {}
 
@@ -81,11 +75,6 @@ class IArgParser:
 
     def getOptionGraphsDirpath(self) -> Path | None:
         arg: str | _Missing = self.getArg(SystemOption.OPTION_GRAPHS_DIRPATH.name)
-        return Path(arg) if not isinstance(arg, _Missing) else None
-
-    @property
-    def env_filepath(self) -> Path | None:
-        arg: str | _Missing = self.getArg(SystemOption.ENV_FILEPATH.name)
         return Path(arg) if not isinstance(arg, _Missing) else None
 
     @property
