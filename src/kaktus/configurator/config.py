@@ -34,6 +34,7 @@ ReloadCallback: TypeAlias = Callable[..., None]
 Properties: TypeAlias = list[property]
 
 _PRESET_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_CONFIGS_SUBDIR = "configs"
 _DEV_SUBDIR = "dev"
 
 
@@ -163,7 +164,6 @@ class IConfig:
         config_fpath: Path | None = None,
         arg_parser: IArgParser | None = None,
         exclusive_group_rules: list[ExclusiveGroupRule] | None = None,
-        root_dirpath: Path | None = None,
     ):
         if config_fpath is not None:
             resolved_fpath = config_fpath
@@ -172,7 +172,6 @@ class IConfig:
         else:
             raise RuntimeError("Configurator needs either a path to config file or a CLI parser")
         self.config_fpath: Path = resolved_fpath
-        self.root_dirpath: Path = root_dirpath if root_dirpath is not None else resolved_fpath.parent
         self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: IArgParser | None = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
@@ -299,17 +298,26 @@ class IConfig:
                     )
                 options[option_name].required = False
 
-    def _resolveCatalogFile(self, subdir: str, preset_id: str, kind: str) -> Path:
+    def _catalogAppRoot(self, cmd_args: dict[str, Any], admin_present: dict[str, Any]) -> Path:
+        raw = self._cmdArg(cmd_args, AdminOption.APP_ROOT_DIRPATH.name)
+        if raw is None:
+            raw = admin_present.get(AdminOption.APP_ROOT_DIRPATH.name)
+        if raw is None:
+            raw = AdminOption.APP_ROOT_DIRPATH.default
+        return Path(str(raw))
+
+    def _resolveDevPresetFile(self, app_root: Path, preset_id: str) -> Path:
         if _PRESET_ID_PATTERN.fullmatch(preset_id) is None:
-            raise InvalidConfig(f"Invalid {kind.capitalize()} preset id: {preset_id}")
-        candidates = [self.root_dirpath / subdir / f"{preset_id}{suffix}" for suffix in configReader.suffixes()]
+            raise InvalidConfig(f"Invalid Dev preset id: {preset_id}")
+        base = app_root / _CONFIGS_SUBDIR / _DEV_SUBDIR
+        candidates = [base / f"{preset_id}{suffix}" for suffix in configReader.suffixes()]
         found = [path for path in candidates if path.is_file()]
         if not found:
             looked_up = ", ".join(str(path) for path in candidates)
-            raise InvalidConfig(f"{kind.capitalize()} preset '{preset_id}' was not found at {looked_up}")
+            raise InvalidConfig(f"Dev preset '{preset_id}' was not found at {looked_up}")
         if len(found) > 1:
             matched = ", ".join(str(path) for path in found)
-            raise InvalidConfig(f"{kind.capitalize()} preset '{preset_id}' matches multiple files: {matched}")
+            raise InvalidConfig(f"Dev preset '{preset_id}' matches multiple files: {matched}")
         return found[0]
 
     def _makeLayer(self, zone: AccessZone, *, allow_all: bool, strict_flatten: bool) -> ConfigLayer:
@@ -372,7 +380,8 @@ class IConfig:
                 dev_preset_id = self._cmdArg(cmd_args, AdminOption.DEV_PRESET.name)
             else:
                 dev_preset_id = admin_present.get(AdminOption.DEV_PRESET.name)
-            dev_path = self._resolveCatalogFile(_DEV_SUBDIR, str(dev_preset_id), "dev")
+            app_root = self._catalogAppRoot(cmd_args, admin_present)
+            dev_path = self._resolveDevPresetFile(app_root, str(dev_preset_id))
             self.layer_files[AccessZone.DEV] = dev_path
 
             dev_layer = self._makeLayer(AccessZone.DEV, allow_all=False, strict_flatten=False)
@@ -589,3 +598,11 @@ class IConfig:
     @property
     def enable_hot_reload(self) -> bool:
         return self._getOptionValue(DevOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]
+
+    @property
+    def app_root_dirpath(self) -> Path:
+        return self._getOptionValue(AdminOption.APP_ROOT_DIRPATH)  # type: ignore[no-any-return]
+
+    @property
+    def app_data_dirpath(self) -> Path:
+        return self._getOptionValue(AdminOption.APP_DATA_DIRPATH)  # type: ignore[no-any-return]

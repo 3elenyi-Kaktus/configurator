@@ -47,6 +47,18 @@ class IArgParser:
             dest=AdminOption.DEV_PRESET.name,
         )
         self.parser.add_argument(
+            "--app-root-dirpath",
+            required=False,
+            help="Root directory of the application source tree",
+            dest=AdminOption.APP_ROOT_DIRPATH.name,
+        )
+        self.parser.add_argument(
+            "--app-data-dirpath",
+            required=False,
+            help="Default directory for application data such as logs and runtime artifacts",
+            dest=AdminOption.APP_DATA_DIRPATH.name,
+        )
+        self.parser.add_argument(
             "--enable-hot-reload",
             required=False,
             action="store_true",

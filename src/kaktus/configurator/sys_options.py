@@ -29,6 +29,22 @@ class AdminOption(OptionGroup):
         rtype=str,
         required=False,
     )
+    APP_ROOT_DIRPATH = Option(
+        "app_root_dirpath",
+        in_type=str,
+        rtype=Path,
+        validator=pathValidator(target=PathTarget.DIRECTORY),
+        required=False,
+        default=".",
+    )
+    APP_DATA_DIRPATH = Option(
+        "app_data_dirpath",
+        in_type=str,
+        rtype=Path,
+        validator=pathValidator(target=PathTarget.DIRECTORY),
+        required=False,
+        default=".",
+    )
 
 
 @optionGroup(zone=AccessZone.DEV)
