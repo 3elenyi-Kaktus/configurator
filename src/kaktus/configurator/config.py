@@ -25,7 +25,7 @@ from kaktus.configurator.errors import (
 from kaktus.configurator.option import _MISSING, Option
 from kaktus.configurator.option_group import OptionGroup
 from kaktus.configurator.rules import DependenciesResolver, DependencyGroup, Depends, ExclusiveGroupRule
-from kaktus.configurator.sys_options import AdminOption, DevOption, SystemOption
+from kaktus.configurator.sys_options import AdminOption, SystemOption
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ class ConfigLayer:
 
 
 def _SystemOptionGroups() -> list[type[OptionGroup]]:
-    return [SystemOption, AdminOption, DevOption]
+    return [SystemOption, AdminOption]
 
 
 class IConfig:
@@ -164,6 +164,7 @@ class IConfig:
         config_fpath: Path | None = None,
         arg_parser: IArgParser | None = None,
         exclusive_group_rules: list[ExclusiveGroupRule] | None = None,
+        app_root_dirpath: Path | None = None,
     ):
         if config_fpath is not None:
             resolved_fpath = config_fpath
@@ -172,6 +173,7 @@ class IConfig:
         else:
             raise RuntimeError("Configurator needs either a path to config file or a CLI parser")
         self.config_fpath: Path = resolved_fpath
+        self.app_root_dirpath: Path = Path(".") if app_root_dirpath is None else app_root_dirpath
         self.option_groups: list[type[OptionGroup]] = option_groups
         self.arg_parser: IArgParser | None = arg_parser
         self.exclusive_group_rules: list[ExclusiveGroupRule] = (
@@ -298,18 +300,10 @@ class IConfig:
                     )
                 options[option_name].required = False
 
-    def _catalogAppRoot(self, cmd_args: dict[str, Any], admin_present: dict[str, Any]) -> Path:
-        raw = self._cmdArg(cmd_args, AdminOption.APP_ROOT_DIRPATH.name)
-        if raw is None:
-            raw = admin_present.get(AdminOption.APP_ROOT_DIRPATH.name)
-        if raw is None:
-            raw = AdminOption.APP_ROOT_DIRPATH.default
-        return Path(str(raw))
-
-    def _resolveDevPresetFile(self, app_root: Path, preset_id: str) -> Path:
+    def _resolveDevPresetFile(self, preset_id: str) -> Path:
         if _PRESET_ID_PATTERN.fullmatch(preset_id) is None:
             raise InvalidConfig(f"Invalid Dev preset id: {preset_id}")
-        base = app_root / _CONFIGS_SUBDIR / _DEV_SUBDIR
+        base = self.app_root_dirpath / _CONFIGS_SUBDIR / _DEV_SUBDIR
         candidates = [base / f"{preset_id}{suffix}" for suffix in configReader.suffixes()]
         found = [path for path in candidates if path.is_file()]
         if not found:
@@ -380,8 +374,7 @@ class IConfig:
                 dev_preset_id = self._cmdArg(cmd_args, AdminOption.DEV_PRESET.name)
             else:
                 dev_preset_id = admin_present.get(AdminOption.DEV_PRESET.name)
-            app_root = self._catalogAppRoot(cmd_args, admin_present)
-            dev_path = self._resolveDevPresetFile(app_root, str(dev_preset_id))
+            dev_path = self._resolveDevPresetFile(str(dev_preset_id))
             self.layer_files[AccessZone.DEV] = dev_path
 
             dev_layer = self._makeLayer(AccessZone.DEV, allow_all=False, strict_flatten=False)
@@ -597,11 +590,7 @@ class IConfig:
 
     @property
     def enable_hot_reload(self) -> bool:
-        return self._getOptionValue(DevOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]
-
-    @property
-    def app_root_dirpath(self) -> Path:
-        return self._getOptionValue(AdminOption.APP_ROOT_DIRPATH)  # type: ignore[no-any-return]
+        return self._getOptionValue(AdminOption.ENABLE_HOT_RELOAD)  # type: ignore[no-any-return]
 
     @property
     def app_data_dirpath(self) -> Path:

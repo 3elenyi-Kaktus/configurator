@@ -8,7 +8,7 @@ from kaktus.json_helpers.helpers import toReadableJSON
 from typing_extensions import override
 
 from kaktus.configurator.option import _MISSING, _Missing
-from kaktus.configurator.sys_options import AdminOption, DevOption, SystemOption
+from kaktus.configurator.sys_options import AdminOption, SystemOption
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -47,12 +47,6 @@ class IArgParser:
             dest=AdminOption.DEV_PRESET.name,
         )
         self.parser.add_argument(
-            "--app-root-dirpath",
-            required=False,
-            help="Root directory of the application source tree",
-            dest=AdminOption.APP_ROOT_DIRPATH.name,
-        )
-        self.parser.add_argument(
             "--app-data-dirpath",
             required=False,
             help="Default directory for application data such as logs and runtime artifacts",
@@ -63,7 +57,7 @@ class IArgParser:
             required=False,
             action="store_true",
             help="Enable hot reloading of config files at runtime",
-            dest=DevOption.ENABLE_HOT_RELOAD.name,
+            dest=AdminOption.ENABLE_HOT_RELOAD.name,
         )
         self.args: dict[str, Any] = {}
 
