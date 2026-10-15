@@ -433,6 +433,7 @@ class IConfig:
         # We successfully validated all options without errors and can save them
         log.info(f"Config: Converted to options: {toReadableJSON(options)}")
         self.options = options
+        self.app_data_dirpath.mkdir(parents=True, exist_ok=True)
 
     def _readProp(self, prop: property) -> Any:
         getter = prop.fget

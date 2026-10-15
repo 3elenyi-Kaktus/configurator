@@ -33,7 +33,7 @@ class AdminOption(OptionGroup):
         "app_data_dirpath",
         in_type=str,
         rtype=Path,
-        validator=pathValidator(target=PathTarget.DIRECTORY),
+        validator=pathValidator(missing_ok=True),
         required=False,
         default=".",
     )
